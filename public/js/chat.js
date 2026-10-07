@@ -9,15 +9,38 @@ const getThreadId = () => {
   return threadId;
 };
 
-const CHAT = {
-  threadId: getThreadId(),
-  log: document.getElementById("chat-log"),
-  form: document.getElementById("chat-form"),
-  input: document.getElementById("chat-input"),
-  sendBtn: document.getElementById("send-btn"),
-  newChatBtn: document.getElementById("new-chat"),
-  messagesReceived: false,
-};
+// Initialize CHAT object after DOM is ready
+let CHAT = null;
+
+function initChat() {
+  CHAT = {
+    threadId: getThreadId(),
+    log: document.getElementById("chat-log"),
+    form: document.getElementById("chat-form"),
+    input: document.getElementById("chat-input"),
+    sendBtn: document.getElementById("send-btn"),
+    newChatBtn: document.getElementById("new-chat"),
+    messagesReceived: false,
+  };
+
+  // Attach event listeners
+  CHAT.form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendMessage();
+  });
+
+  CHAT.newChatBtn.addEventListener("click", () => {
+    // Create new conversation and update localStorage
+    CHAT.threadId = crypto.randomUUID();
+    localStorage.setItem("threadId", CHAT.threadId);
+    CHAT.log.innerHTML = "";
+    greet();
+    CHAT.input.focus();
+  });
+
+  // Greet on chat screen show
+  greet();
+}
 
 function addMessage(role, text) {
   const el = document.createElement("div");
@@ -152,19 +175,11 @@ async function sendMessage() {
   }
 }
 
-CHAT.form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  sendMessage();
-});
-
-CHAT.newChatBtn.addEventListener("click", () => {
-  // Create new conversation and update localStorage
-  CHAT.threadId = crypto.randomUUID();
-  localStorage.setItem("threadId", CHAT.threadId);
-  CHAT.log.innerHTML = "";
-  greet();
-  CHAT.input.focus();
-});
-
-// Greet on chat screen show
-greet();
+// Initialize chat UI after DOM and auth are ready
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initChat);
+} else {
+  // DOM already loaded (chat.js loaded after DOMContentLoaded event)
+  // Wait a tick to ensure auth.js has finished
+  setTimeout(initChat, 0);
+}

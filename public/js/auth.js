@@ -113,5 +113,10 @@ async function logout() {
   });
 }
 
-// Initialize auth on page load
-document.addEventListener("DOMContentLoaded", initAuth);
+// Initialize auth immediately if DOM is ready, otherwise wait for DOMContentLoaded
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initAuth);
+} else {
+  // DOM already loaded (auth.js loaded after DOMContentLoaded event)
+  initAuth();
+}
