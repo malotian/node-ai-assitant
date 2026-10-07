@@ -6,10 +6,10 @@ let AUTH = {
   auth0Client: null,
 };
 
-// Wait for Auth0Client to be available
-async function waitForAuth0Client(maxAttempts = 50) {
+// Wait for auth0 SDK to be available
+async function waitForAuth0SDK(maxAttempts = 50) {
   for (let i = 0; i < maxAttempts; i++) {
-    if (typeof Auth0Client !== "undefined") {
+    if (typeof auth0 !== "undefined" && auth0.Auth0Client) {
       return true;
     }
     await new Promise(resolve => setTimeout(resolve, 100)); // Wait 100ms
@@ -20,10 +20,10 @@ async function waitForAuth0Client(maxAttempts = 50) {
 // Initialize Auth0Client from CDN
 async function initAuth() {
   try {
-    // Wait for Auth0Client to load from CDN (max 5 seconds)
-    const loaded = await waitForAuth0Client();
+    // Wait for auth0 SDK to load from CDN (max 5 seconds)
+    const loaded = await waitForAuth0SDK();
     if (!loaded) {
-      console.error("Auth0Client not loaded from CDN after 5 seconds. Check network tab.");
+      console.error("Auth0 SDK not loaded from CDN after 5 seconds. Check network tab.");
       // Set AUTH as unauthenticated fallback
       AUTH.authenticated = false;
       AUTH.user = { name: "Guest", email: "" };
@@ -36,8 +36,8 @@ async function initAuth() {
     const clientId = window.AUTH0_CLIENT_ID || "pCsLVKSCw8ROrXqZYWA2qGYZwcREoCjJ";
     const audience = window.AUTH0_API_AUDIENCE || "https://node-ai-assistant.example.com";
 
-    // Create Auth0Client instance
-    AUTH.auth0Client = await Auth0Client.create({
+    // Create Auth0Client instance using the correct global
+    AUTH.auth0Client = await auth0.Auth0Client.create({
       domain,
       clientId,
       authorizationParams: {
