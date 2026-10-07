@@ -6,12 +6,24 @@ let AUTH = {
   auth0Client: null,
 };
 
+// Wait for Auth0Client to be available
+async function waitForAuth0Client(maxAttempts = 50) {
+  for (let i = 0; i < maxAttempts; i++) {
+    if (typeof Auth0Client !== "undefined") {
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100)); // Wait 100ms
+  }
+  return false;
+}
+
 // Initialize Auth0Client from CDN
 async function initAuth() {
   try {
-    // Wait for Auth0Client to load from CDN
-    if (typeof Auth0Client === "undefined") {
-      console.error("Auth0Client not loaded from CDN. Check network tab.");
+    // Wait for Auth0Client to load from CDN (max 5 seconds)
+    const loaded = await waitForAuth0Client();
+    if (!loaded) {
+      console.error("Auth0Client not loaded from CDN after 5 seconds. Check network tab.");
       // Set AUTH as unauthenticated fallback
       AUTH.authenticated = false;
       AUTH.user = { name: "Guest", email: "" };
