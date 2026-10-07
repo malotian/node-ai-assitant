@@ -1,85 +1,38 @@
-# Process Management with PM2
+# Process Management
 
-PM2 is a production-grade process manager for Node.js applications.
+Process management is kept simple and minimal using standard `npm` scripts:
 
 ## Quick Start
 
-### Start (Background with PM2)
+### Start Server
 ```bash
-npm run pm2:start
+npm start
 ```
-- Starts the app in background
-- Auto-restart on crash
-- Logs stored and viewable
+- Starts `node src/server.js` directly in the foreground.
+- Simple and minimal (does not kill other processes on start).
 
-### Stop
+### Development Mode (Watch Mode)
 ```bash
-npm run pm2:stop
+npm run dev
 ```
-- Gracefully stops the process
+- Starts `node --watch src/server.js` to automatically reload on code changes.
 
-### Restart
+### Stop Server
 ```bash
-npm run pm2:restart
+npm stop
 ```
-- Restart without downtime
+- Kills the server process and frees port 3000.
+- Terminates instances even if running from other terminals or in the background.
 
-### View Logs
+## Common Workflows
+
+### Run in Background
 ```bash
-npm run pm2:logs
+npm start &
 ```
-- Tail the application logs
 
-### Monitor Processes
+### Stop Any Running Instance
 ```bash
-npm run pm2:monit
-```
-- Real-time dashboard of CPU/memory/uptime
-
-## Foreground Development
-
-For development, use foreground mode:
-```bash
-npm start          # Logs visible directly
-npm run dev        # Watch mode (auto-restart on file changes)
+npm stop
 ```
 
-## PM2 vs Foreground
-
-| Feature | npm start | npm run pm2:start |
-|---------|-----------|-------------------|
-| Logs | Direct in terminal | Stored in PM2 |
-| Auto-restart | No | Yes (on crash) |
-| Background | No | Yes |
-| Development | ✅ Better | Development logs harder to see |
-| Production | For Kubernetes/Docker | ✅ Better |
-
-## Best Practices
-
-- **Development**: Use `npm start` or `npm run dev`
-- **Production**: Use `npm run pm2:start` + pm2 daemon manager
-- **Docker**: Use `npm start` (container handles process)
-
-## PM2 Config File (Optional)
-
-Create `ecosystem.config.js` for advanced config:
-```javascript
-module.exports = {
-  apps: [{
-    name: 'assistant',
-    script: 'src/server.js',
-    instances: 1,
-    exec_mode: 'cluster',
-    env: { NODE_ENV: 'production' },
-    error_file: 'logs/error.log',
-    out_file: 'logs/out.log',
-  }]
-};
-```
-
-Then use:
-```bash
-pm2 start ecosystem.config.js
-```
-
-See [pm2.io](https://pm2.io) for more options.

@@ -6,13 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "stop": "fuser -k 3000/tcp 2>/dev/null || true; pkill -f '[n]ode.*src/server.js' 2>/dev/null || true",
     "test": "node --test test/auth-signal.test.js test/chat-ui.test.js",
-    "test:all": "node --test test/*.test.js",
-    "pm2:start": "pm2 start src/server.js --name assistant",
-    "pm2:stop": "pm2 stop assistant",
-    "pm2:restart": "pm2 restart assistant",
-    "pm2:logs": "pm2 logs assistant",
-    "pm2:monit": "pm2 monit"
+    "test:all": "node --test test/*.test.js"
   },
   "engines": {
     "node": ">=20"
