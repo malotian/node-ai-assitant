@@ -1,17 +1,18 @@
 require("dotenv").config();
 const path = require("path");
 const express = require("express");
-const { auth } = require("express-openid-connect");
+const { expressjwt: jwt } = require("express-jwt");
+const jwksClient = require("jwks-rsa");
 const { agent } = require("./agent");
 const { logger } = require("./logger");
 const { isAuthRequiredSignal } = require("./tools");
 
 const {
   APP_BASE_URL = "http://localhost:3000",
-  AUTH0_SECRET,
   AUTH0_DOMAIN,
   AUTH0_CLIENT_ID,
   AUTH0_CLIENT_SECRET,
+  AUTH0_API_AUDIENCE,
   LLM_API_KEY,
   PORT = 3000,
 } = process.env;
@@ -19,28 +20,25 @@ const {
 const app = express();
 app.use(express.json());
 
-// --- Auth0 Universal Login (OAuth 2.0 + OpenID Connect) ---------------------
-app.use(
-  auth({
-    authRequired: false,
-    auth0Logout: true,
-    baseURL: APP_BASE_URL,
-    secret: AUTH0_SECRET,
-    issuerBaseURL: `https://${AUTH0_DOMAIN}`,
-    clientID: AUTH0_CLIENT_ID,
-    clientSecret: AUTH0_CLIENT_SECRET,
-    authorizationParams: { response_type: "code", scope: "openid profile email" },
-    routes: { login: false, logout: "/auth/logout", callback: "/auth/callback" },
-  })
-);
+// --- JWT Validation Middleware (Phase 1) ---
+// This middleware validates access tokens from Auth0Client
+// It runs on protected routes (/api/chat, /api/me)
+const checkJwt = jwt({
+  secret: jwksClient.expressJwtSecret({
+    cache: true,
+    rateLimit: true,
+    jwksUri: `https://${AUTH0_DOMAIN}/.well-known/jwks.json`,
+  }),
+  audience: AUTH0_API_AUDIENCE,
+  issuer: `https://${AUTH0_DOMAIN}/`,
+  algorithms: ["RS256"],
+  credentialsRequired: false, // Allow anonymous access (some endpoints allow it)
+});
 
-app.get("/auth/login", (req, res) => res.oidc.login({ returnTo: "/" }));
-app.get("/auth/signup", (req, res) =>
-  res.oidc.login({ returnTo: "/", authorizationParams: { screen_hint: "signup" } })
-);
+app.use(checkJwt);
 
-// --- Middleware ---
-const isAuthenticated = (req) => req.oidc?.isAuthenticated() || false;
+// --- Helper Functions ---
+const isAuthenticated = (req) => !!req.auth;
 const requireUser = (req, res, next) =>
   isAuthenticated(req) ? next() : res.status(401).json({ error: "Not authenticated" });
 
@@ -52,28 +50,31 @@ app.use("/js", express.static(path.join(__dirname, "..", "public", "js")));
 // --- Pages ---
 app.get("/", (req, res) => res.sendFile(pub("index.html")));
 
-// --- API: User Info ---
+// --- API: User Info (Phase 1) ---
+// Returns user claims from JWT (Auth0 provides these)
 app.get("/api/me", requireUser, (req, res) => {
-  const { name, email, picture } = req.oidc.user;
-  res.json({ name, email, picture });
+  const { name, email, picture, sub } = req.auth;
+  res.json({ name, email, picture, sub });
 });
 
-// --- API: Authentication Status ---
+// --- API: Authentication Status (Phase 1) ---
+// Returns whether user has valid JWT
 app.get("/api/auth/status", (req, res) => {
   res.json({ authenticated: isAuthenticated(req) });
 });
 
-// --- API: Chat (Anonymous + Authenticated) ---
-// Routes to login if a tool requires auth and user isn't logged in
+// --- API: Chat (Anonymous + Authenticated) with Phase 1 Support ---
+// Accepts accessToken from frontend (Auth0Client)
+// Passes accessToken to agent for tools that need it
 app.post("/api/chat", async (req, res) => {
-  const { message, threadId } = req.body || {};
+  const { message, threadId, accessToken } = req.body || {};
   if (typeof message !== "string" || !message.trim() || typeof threadId !== "string") {
     return res.status(400).json({ error: "message and threadId are required" });
   }
   if (!LLM_API_KEY) return res.status(500).json({ error: "LLM_API_KEY is not set" });
 
   const authenticated = isAuthenticated(req);
-  const user = authenticated ? req.oidc.user : { sub: "anonymous", name: "Guest" };
+  const user = authenticated ? req.auth : { sub: "anonymous", name: "Guest" };
 
   logger.info(`Chat request: user=${user.name} authenticated=${authenticated} message="${message.slice(0, 50)}..."`);
 
@@ -93,7 +94,7 @@ app.post("/api/chat", async (req, res) => {
   try {
     const result = await agent.invoke(
       { messages: [{ role: "user", content: message }] },
-      { configurable: { thread_id, user, authenticated } }
+      { configurable: { thread_id, user, authenticated, accessToken } }
     );
 
     // Definitive signal check: inspect tool messages from agent trace

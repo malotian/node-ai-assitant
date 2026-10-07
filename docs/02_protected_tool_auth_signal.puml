@@ -1,0 +1,68 @@
+@startuml Protected_Tool_Auth_Signal
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: Anonymous User - Protected Tool (Definitive Auth Signal)
+
+actor User
+participant "Browser\n(chat.js)" as UI
+participant "Express Server\n(server.js)" as Server
+participant "LangGraph Agent" as Agent
+participant "Tool Executor" as Tools
+participant "Gemini API" as LLM
+
+User -> UI : "Who am I?"
+UI -> Server : POST /api/chat\n{ message, threadId }
+note over Server #fff3e0
+  No session cookie
+  config: { authenticated: false, user: null }
+end note
+
+Server -> Agent : invoke(messages, config)
+activate Agent
+
+Agent -> LLM : Prompt: "Who am I?"
+activate LLM
+LLM --> Agent : FunctionCall: get_user_profile()
+deactivate LLM
+
+Agent -> Tools : execute(get_user_profile, config)
+activate Tools
+note over Tools #ffebee
+  ⚠️ DEFINITIVE SIGNAL
+  Tool requires authentication
+  authenticated flag = false
+  → Reject with requiresAuth: true
+end note
+Tools --> Agent : ToolMessage: {\n  requiresAuth: true,\n  error: "AUTH_REQUIRED",\n  content: "You must log in first"\n}
+deactivate Tools
+
+Agent -> LLM : Tool error: "You must log in first"
+activate LLM
+LLM --> Agent : AIMessage: "I need you to log in so I can look up your profile."
+deactivate LLM
+
+deactivate Agent
+Agent --> Server : result {\n  messages: [\n    UserMessage,\n    FunctionCall,\n    ToolMessage { requiresAuth: true },\n    AIMessage\n  ]\n}
+
+Server -> Server : isAuthRequiredSignal(messages)\n→ Scan ToolMessage items\n→ Find requiresAuth: true? YES\n→ Return: TRUE
+note over Server #ffcccc
+  DEFINITIVE: ToolMessage explicitly
+  declares auth required
+  (never parses LLM text)
+end note
+
+Server -> UI : SSE event: { token: "I need" }
+Server -> UI : SSE event: { token: " you to" }
+Server -> UI : SSE event: { token: " log in..." }
+Server -> UI : SSE event: { requireAuth: true, error: "AUTH_REQUIRED" }
+Server -> UI : SSE event: { done: true }
+
+UI -> UI : Receive event.requireAuth === true\n(Zero string parsing)\nAppend [🔐 Log in] button
+UI -> User : Message + [🔐 Log in] button
+
+@enduml

@@ -1,0 +1,60 @@
+@startuml OAuth_Authentication_Flow
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: OAuth 2.0 Authentication (Auth0 / OIDC)
+
+actor User
+participant "Browser\n(auth.js)" as UI
+participant "Express Server\n(server.js)" as Server
+participant "Auth0\nUniversal Login" as Auth0
+
+User -> UI : Clicks [🔐 Log in] button
+UI -> Server : GET /auth/login
+note over Server
+  express-openid-connect
+  middleware initiates flow
+end note
+
+Server -> Auth0 : Redirect to /authorize?\nclient_id=...\n&redirect_uri=http://localhost/auth/callback\n&scope=openid profile email\n&response_type=code\n&state=...
+note over Auth0 #e3f2fd
+  OIDC Authorization Code Flow
+end note
+
+Auth0 -> User : Display login form
+User -> Auth0 : Enter email & password
+Auth0 -> Auth0 : Validate credentials
+note over Auth0 #c8f0c8
+  ✓ Credentials valid
+  Generate authorization code
+end note
+
+Auth0 -> Server : Redirect to /auth/callback?\ncode=AUTH_CODE_XYZ\n&state=...
+note over Server #e3f2fd
+  OIDC middleware intercepts
+end note
+
+Server -> Server : 1. Validate state parameter\n2. Exchange code for tokens\n3. Validate id_token (JWT)\n4. Extract claims:\n   - name: "Alice"\n   - email: "alice@example.com"\n   - sub: "auth0|12345"\n5. Create session data\n6. Store in session store\n7. Issue HTTP-only cookie
+note over Server #c8f0c8
+  ✓ Secure session established
+  User data extracted from JWT
+end note
+
+Server -> UI : 302 Redirect: Location: /
+UI -> Server : GET /
+Server -> UI : 200 OK + index.html
+
+UI -> Server : GET /api/auth/status
+Server --> UI : { authenticated: true }
+
+UI -> Server : GET /api/me
+Server --> UI : {\n  name: "Alice",\n  email: "alice@example.com",\n  sub: "auth0|12345"\n}
+
+UI -> UI : Update header:\nDisplay "Alice"\nShow [Log out] button
+UI -> User : "Welcome back, Alice!"
+
+@enduml

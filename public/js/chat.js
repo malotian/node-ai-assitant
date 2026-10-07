@@ -42,10 +42,13 @@ function showLoginButton(targetMsg) {
   btnWrapper.className = "auth-action-wrapper";
   btnWrapper.style.marginTop = "10px";
 
-  const loginLink = document.createElement("a");
+  const loginLink = document.createElement("button");
   loginLink.className = "btn small login-action-btn";
-  loginLink.href = "/auth/login";
   loginLink.textContent = "🔐 Log in";
+  loginLink.onclick = (e) => {
+    e.preventDefault();
+    login(); // NEW (Phase 1): Call Auth0Client login
+  };
 
   btnWrapper.appendChild(loginLink);
   targetMsg.appendChild(btnWrapper);
@@ -63,10 +66,17 @@ async function sendMessage() {
   let received = false;
 
   try {
+    // NEW (Phase 1): Get access token if authenticated
+    const accessToken = AUTH.authenticated ? await getAccessToken() : null;
+
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: text, threadId: CHAT.threadId }),
+      body: JSON.stringify({
+        message: text,
+        threadId: CHAT.threadId,
+        accessToken, // NEW (Phase 1): Send access token to backend
+      }),
     });
 
     if (response.status === 401) {

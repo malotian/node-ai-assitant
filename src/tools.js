@@ -1,5 +1,6 @@
 const { tool } = require("@langchain/core/tools");
 const { z } = require("zod");
+const axios = require("axios");
 
 const AUTH_REQUIRED_CODE = "AUTH_REQUIRED";
 const AUTH_REQUIRED_MARKER = "[AUTH_REQUIRED]";
@@ -98,8 +99,20 @@ const getUserProfile = tool(
       return createAuthRequiredPayload("User profile requires authentication");
     }
 
-    const { name, email, email_verified, locale } = config.configurable?.user || {};
-    return JSON.stringify({ name, email, email_verified, locale });
+    const accessToken = config.configurable?.accessToken;
+    const user = config.configurable?.user || {};
+
+    // Phase 1: If accessToken available, could call Auth0 Management API
+    // For now, return user claims from config (same as before)
+    // In Phase 2+, this could call Auth0 API with accessToken for more data
+
+    return JSON.stringify({
+      name: user.name,
+      email: user.email,
+      email_verified: user.email_verified,
+      locale: user.locale,
+      sub: user.sub,
+    });
   },
   {
     name: "get_user_profile",

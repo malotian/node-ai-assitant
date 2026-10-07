@@ -1,0 +1,439 @@
+@startuml Anonymous_Public_Tool
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: Anonymous User - Public Tool (get_current_time)
+
+actor User
+participant "Browser\n(chat.js)" as UI
+participant "Express Server\n(server.js)" as Server
+participant "LangGraph Agent" as Agent
+participant "Tool Executor" as Tools
+participant "Gemini API" as LLM
+
+User -> UI : "What time is it in Tokyo?"
+UI -> Server : POST /api/chat\n{ message, threadId }
+note over Server #e3f2fd
+  No session cookie
+  config: { authenticated: false, user: null }
+end note
+
+Server -> Agent : invoke(messages, config)
+activate Agent
+
+Agent -> LLM : Prompt: "What time is it in Tokyo?"
+activate LLM
+LLM --> Agent : FunctionCall: get_current_time({ timezone: "Asia/Tokyo" })
+deactivate LLM
+
+Agent -> Tools : execute(get_current_time)
+activate Tools
+Tools --> Agent : ToolMessage: "04:57 AM JST"
+deactivate Tools
+
+Agent -> LLM : Tool result: "04:57 AM JST"
+activate LLM
+LLM --> Agent : AIMessage: "It's 4:57 AM in Tokyo right now."
+deactivate LLM
+
+deactivate Agent
+Agent --> Server : result {\n  messages: [\n    UserMessage,\n    FunctionCall,\n    ToolMessage,\n    AIMessage\n  ]\n}
+
+Server -> Server : isAuthRequiredSignal(messages)\n→ requiresAuth flag found? NO\n→ Return: FALSE
+note over Server #c8f0c8
+  Safe to stream response
+  No login required
+end note
+
+loop Token streaming (SSE)
+  Server -> UI : SSE event: { token: "It's" }
+  Server -> UI : SSE event: { token: " 4:57" }
+  Server -> UI : SSE event: { token: " AM..." }
+end
+
+Server -> UI : SSE event: { done: true }
+
+UI -> UI : Render tokens\nNo login button
+UI -> User : "It's 4:57 AM in Tokyo right now."
+
+@enduml
+
+@startuml Protected_Tool_Auth_Signal
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: Anonymous User - Protected Tool (Definitive Auth Signal)
+
+actor User
+participant "Browser\n(chat.js)" as UI
+participant "Express Server\n(server.js)" as Server
+participant "LangGraph Agent" as Agent
+participant "Tool Executor" as Tools
+participant "Gemini API" as LLM
+
+User -> UI : "Who am I?"
+UI -> Server : POST /api/chat\n{ message, threadId }
+note over Server #fff3e0
+  No session cookie
+  config: { authenticated: false, user: null }
+end note
+
+Server -> Agent : invoke(messages, config)
+activate Agent
+
+Agent -> LLM : Prompt: "Who am I?"
+activate LLM
+LLM --> Agent : FunctionCall: get_user_profile()
+deactivate LLM
+
+Agent -> Tools : execute(get_user_profile, config)
+activate Tools
+note over Tools #ffebee
+  ⚠️ DEFINITIVE SIGNAL
+  Tool requires authentication
+  authenticated flag = false
+  → Reject with requiresAuth: true
+end note
+Tools --> Agent : ToolMessage: {\n  requiresAuth: true,\n  error: "AUTH_REQUIRED",\n  content: "You must log in first"\n}
+deactivate Tools
+
+Agent -> LLM : Tool error: "You must log in first"
+activate LLM
+LLM --> Agent : AIMessage: "I need you to log in so I can look up your profile."
+deactivate LLM
+
+deactivate Agent
+Agent --> Server : result {\n  messages: [\n    UserMessage,\n    FunctionCall,\n    ToolMessage { requiresAuth: true },\n    AIMessage\n  ]\n}
+
+Server -> Server : isAuthRequiredSignal(messages)\n→ Scan ToolMessage items\n→ Find requiresAuth: true? YES\n→ Return: TRUE
+note over Server #ffcccc
+  DEFINITIVE: ToolMessage explicitly
+  declares auth required
+  (never parses LLM text)
+end note
+
+Server -> UI : SSE event: { token: "I need" }
+Server -> UI : SSE event: { token: " you to" }
+Server -> UI : SSE event: { token: " log in..." }
+Server -> UI : SSE event: { requireAuth: true, error: "AUTH_REQUIRED" }
+Server -> UI : SSE event: { done: true }
+
+UI -> UI : Receive event.requireAuth === true\n(Zero string parsing)\nAppend [🔐 Log in] button
+UI -> User : Message + [🔐 Log in] button
+
+@enduml
+
+@startuml OAuth_Authentication_Flow
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: OAuth 2.0 Authentication (Auth0 / OIDC)
+
+actor User
+participant "Browser\n(auth.js)" as UI
+participant "Express Server\n(server.js)" as Server
+participant "Auth0\nUniversal Login" as Auth0
+
+User -> UI : Clicks [🔐 Log in] button
+UI -> Server : GET /auth/login
+note over Server
+  express-openid-connect
+  middleware initiates flow
+end note
+
+Server -> Auth0 : Redirect to /authorize?\nclient_id=...\n&redirect_uri=http://localhost/auth/callback\n&scope=openid profile email\n&response_type=code\n&state=...
+note over Auth0 #e3f2fd
+  OIDC Authorization Code Flow
+end note
+
+Auth0 -> User : Display login form
+User -> Auth0 : Enter email & password
+Auth0 -> Auth0 : Validate credentials
+note over Auth0 #c8f0c8
+  ✓ Credentials valid
+  Generate authorization code
+end note
+
+Auth0 -> Server : Redirect to /auth/callback?\ncode=AUTH_CODE_XYZ\n&state=...
+note over Server #e3f2fd
+  OIDC middleware intercepts
+end note
+
+Server -> Server : 1. Validate state parameter\n2. Exchange code for tokens\n3. Validate id_token (JWT)\n4. Extract claims:\n   - name: "Alice"\n   - email: "alice@example.com"\n   - sub: "auth0|12345"\n5. Create session data\n6. Store in session store\n7. Issue HTTP-only cookie
+note over Server #c8f0c8
+  ✓ Secure session established
+  User data extracted from JWT
+end note
+
+Server -> UI : 302 Redirect: Location: /
+UI -> Server : GET /
+Server -> UI : 200 OK + index.html
+
+UI -> Server : GET /api/auth/status
+Server --> UI : { authenticated: true }
+
+UI -> Server : GET /api/me
+Server --> UI : {\n  name: "Alice",\n  email: "alice@example.com",\n  sub: "auth0|12345"\n}
+
+UI -> UI : Update header:\nDisplay "Alice"\nShow [Log out] button
+UI -> User : "Welcome back, Alice!"
+
+@enduml
+
+@startuml Authenticated_Protected_Tool
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: Authenticated User - Protected Tool Success
+
+actor User
+participant "Browser\n(chat.js)" as UI
+participant "Express Server\n(server.js)" as Server
+participant "LangGraph Agent" as Agent
+participant "Tool Executor" as Tools
+participant "Gemini API" as LLM
+
+User -> UI : "Who am I?" (after login)
+UI -> Server : POST /api/chat\n{ message, threadId }\n+ session cookie
+note over Server #c8f0c8
+  express-openid-connect middleware:
+  1. Validates session cookie
+  2. Extracts claims from session
+  3. Sets config.authenticated = true
+end note
+
+note over Server
+  config: {
+    authenticated: true,
+    user: {
+      name: "Alice",
+      email: "alice@example.com",
+      sub: "auth0|12345"
+    }
+  }
+end note
+
+Server -> Agent : invoke(messages, config)
+activate Agent
+
+Agent -> LLM : Prompt with context:\n"User is Alice (alice@example.com)\n\nQuestion: Who am I?"
+activate LLM
+LLM --> Agent : FunctionCall: get_user_profile()
+deactivate LLM
+
+Agent -> Tools : execute(get_user_profile, config)
+activate Tools
+note over Tools #c8f0c8
+  ✓ ALLOW: authenticated = true
+  Return user profile from config
+end note
+Tools --> Agent : ToolMessage: {\n  name: "Alice",\n  email: "alice@example.com",\n  sub: "auth0|12345"\n}
+deactivate Tools
+
+Agent -> LLM : Tool result: Alice's profile
+activate LLM
+LLM --> Agent : AIMessage: "You are Alice (alice@example.com)."
+deactivate LLM
+
+deactivate Agent
+Agent --> Server : result {\n  messages: [\n    UserMessage,\n    FunctionCall,\n    ToolMessage { user data },\n    AIMessage\n  ]\n}
+
+Server -> Server : isAuthRequiredSignal(messages)\n→ requiresAuth flag found? NO\n→ Return: FALSE
+note over Server #c8f0c8
+  No auth signal detected
+  Stream response safely
+end note
+
+loop Token streaming (SSE)
+  Server -> UI : SSE event: { token: "You are" }
+  Server -> UI : SSE event: { token: " Alice" }
+end
+
+Server -> UI : SSE event: { done: true }
+
+UI -> UI : Render tokens\nNo login button appended
+UI -> User : "You are Alice (alice@example.com)."
+
+@enduml
+
+@startuml Logout_Session_Revocation
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: User Logout & Session Revocation
+
+actor User
+participant "Browser\n(auth.js)" as UI
+participant "Express Server\n(server.js)" as Server
+participant "Session Store" as SessionStore
+
+User -> UI : Clicks [Log out] button
+UI -> Server : GET /auth/logout
+note over Server
+  express-openid-connect
+  middleware handles logout
+end note
+
+Server -> SessionStore : Invalidate session\n(delete from store)
+note over SessionStore #c8f0c8
+  ✓ Session deleted
+end note
+
+Server -> Server : Clear HTTP-only cookie\nSet-Cookie: auth0=; Max-Age=0
+note over Server #c8f0c8
+  ✓ Cookie expired
+  Browser won't send it in future requests
+end note
+
+Server -> UI : 302 Redirect: Location: /
+note over UI
+  Frontend clears local auth state
+end note
+
+UI -> UI : Clear cached user data\nReset UI to anonymous state\nHide profile, show login button
+UI -> User : "Logged out successfully"
+
+User -> UI : Refresh page or try "Who am I?"
+UI -> Server : GET /api/chat\n(no session cookie)
+note over Server
+  config: { authenticated: false, user: null }
+end note
+
+Server --> UI : Protected tool request\ntriggers auth signal again
+
+@enduml
+
+@startuml Error_Handling_Tool_Exception
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: Error Handling - Tool Exception
+
+actor User
+participant "Browser\n(chat.js)" as UI
+participant "Express Server\n(server.js)" as Server
+participant "LangGraph Agent" as Agent
+participant "Tool Executor" as Tools
+participant "Gemini API" as LLM
+
+User -> UI : "Get current weather"
+UI -> Server : POST /api/chat\n{ message, threadId }
+note over Server
+  config: { authenticated: false }
+end note
+
+Server -> Agent : invoke(messages, config)
+activate Agent
+
+Agent -> LLM : Prompt: "Get current weather"
+activate LLM
+LLM --> Agent : FunctionCall: get_weather({ location: "..." })
+deactivate LLM
+
+Agent -> Tools : execute(get_weather, {...})
+activate Tools
+note over Tools #ffebee
+  ⚠️ TOOL EXCEPTION
+  Weather API timeout
+  Tool throws error
+end note
+Tools --> Agent : ToolMessage: {\n  error: "WEATHER_API_ERROR",\n  message: "Failed to fetch weather data"\n}
+deactivate Tools
+
+Agent -> LLM : Tool error: "Failed to fetch weather data"
+activate LLM
+LLM --> Agent : AIMessage: "Sorry, I couldn't fetch the weather right now. Try again later."
+deactivate LLM
+
+deactivate Agent
+Agent --> Server : result {\n  messages: [\n    UserMessage,\n    FunctionCall,\n    ToolMessage { error },\n    AIMessage\n  ]\n}
+
+Server -> Server : isAuthRequiredSignal(messages)\n→ requiresAuth: true? NO\n→ Return: FALSE
+note over Server #c8f0c8
+  Tool error ≠ auth signal
+  Safe to stream error message
+end note
+
+Server -> UI : SSE event: { token: "Sorry" }
+Server -> UI : SSE event: { token: "..." }
+Server -> UI : SSE event: { done: true }
+
+UI -> User : Error message from LLM
+
+@enduml
+
+@startuml Session_Expiration_Recovery
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: Session Expiration & Recovery
+
+actor User
+participant "Browser\n(chat.js)" as UI
+participant "Express Server\n(server.js)" as Server
+
+note over UI,Server
+  Time passes: 24 hours
+  Session cookie expires
+end note
+
+User -> UI : "Who am I?" (stale cookie in browser)
+UI -> Server : POST /api/chat\n{ message, threadId }\n+ expired session cookie
+note over Server
+  express-openid-connect middleware:
+  Session lookup fails
+  Treat as unauthenticated
+  config: { authenticated: false }
+end note
+
+Server --> UI : Protected tool triggers\nrequireAuth: true signal
+note over UI #fff3e0
+  Auth signal received
+  UI shows [🔐 Log in] button
+end note
+
+UI -> User : Message + [🔐 Log in] button
+User -> UI : Clicks [🔐 Log in]
+
+note over UI,Server
+  User goes through OAuth flow again
+  New session established
+end note
+
+UI -> Server : POST /api/chat\n(refreshed session cookie)
+note over Server
+  New session valid
+  config: { authenticated: true }
+end note
+
+Server --> UI : Protected tool succeeds\nUser data returned
+
+@enduml

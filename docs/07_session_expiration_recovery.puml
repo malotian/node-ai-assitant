@@ -1,0 +1,51 @@
+@startuml Session_Expiration_Recovery
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: Session Expiration & Recovery
+
+actor User
+participant "Browser\n(chat.js)" as UI
+participant "Express Server\n(server.js)" as Server
+
+note over UI,Server
+  Time passes: 24 hours
+  Session cookie expires
+end note
+
+User -> UI : "Who am I?" (stale cookie in browser)
+UI -> Server : POST /api/chat\n{ message, threadId }\n+ expired session cookie
+note over Server
+  express-openid-connect middleware:
+  Session lookup fails
+  Treat as unauthenticated
+  config: { authenticated: false }
+end note
+
+Server --> UI : Protected tool triggers\nrequireAuth: true signal
+note over UI #fff3e0
+  Auth signal received
+  UI shows [🔐 Log in] button
+end note
+
+UI -> User : Message + [🔐 Log in] button
+User -> UI : Clicks [🔐 Log in]
+
+note over UI,Server
+  User goes through OAuth flow again
+  New session established
+end note
+
+UI -> Server : POST /api/chat\n(refreshed session cookie)
+note over Server
+  New session valid
+  config: { authenticated: true }
+end note
+
+Server --> UI : Protected tool succeeds\nUser data returned
+
+@enduml

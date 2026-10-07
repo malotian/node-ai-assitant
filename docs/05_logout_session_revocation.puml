@@ -1,0 +1,50 @@
+@startuml Logout_Session_Revocation
+!theme plain
+autonumber
+skinparam shadowing false
+skinparam roundcorner 6
+skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
+
+title Sequence: User Logout & Session Revocation
+
+actor User
+participant "Browser\n(auth.js)" as UI
+participant "Express Server\n(server.js)" as Server
+participant "Session Store" as SessionStore
+
+User -> UI : Clicks [Log out] button
+UI -> Server : GET /auth/logout
+note over Server
+  express-openid-connect
+  middleware handles logout
+end note
+
+Server -> SessionStore : Invalidate session\n(delete from store)
+note over SessionStore #c8f0c8
+  ✓ Session deleted
+end note
+
+Server -> Server : Clear HTTP-only cookie\nSet-Cookie: auth0=; Max-Age=0
+note over Server #c8f0c8
+  ✓ Cookie expired
+  Browser won't send it in future requests
+end note
+
+Server -> UI : 302 Redirect: Location: /
+note over UI
+  Frontend clears local auth state
+end note
+
+UI -> UI : Clear cached user data\nReset UI to anonymous state\nHide profile, show login button
+UI -> User : "Logged out successfully"
+
+User -> UI : Refresh page or try "Who am I?"
+UI -> Server : GET /api/chat\n(no session cookie)
+note over Server
+  config: { authenticated: false, user: null }
+end note
+
+Server --> UI : Protected tool request\ntriggers auth signal again
+
+@enduml

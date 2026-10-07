@@ -6,64 +6,80 @@ skinparam shadowing false
 skinparam roundcorner 8
 skinparam defaultFontName Arial
 
-title Express AI Assistant - System Architecture
+title Express AI Assistant - System Architecture\n(Node.js + Express + LangGraph + Gemini)
 
-package "Frontend (Browser Client)" {
-    [index.html] as HTML
-    [js/auth.js] as AuthUI
-    [js/chat.js] as ChatUI
-    [style.css] as Style
-    
-    HTML ..> AuthUI : loads
-    HTML ..> ChatUI : loads
-    HTML ..> Style : loads
+package "🌐 CLIENT LAYER (Browser)" {
+    [index.html\nEntry Point] as HTML
+    [js/auth.js\nAuth State Manager] as AuthUI
+    [js/chat.js\nChat Interface] as ChatUI
+    [style.css\nTheme & Layout] as Style
+    [EventSource\nSSE Listener] as EventListener
 }
 
-package "Backend (Express Server)" {
-    [src/server.js\nExpress App] as Server
+package "⚙️ SERVER LAYER (Node.js/Express)" {
+    [src/server.js\nExpress Router] as Server
     [express-openid-connect\nOIDC Middleware] as OIDC
+    [express-session\nSession Store] as SessionStore
     [src/logger.js\nWinston Logger] as Logger
-    
-    Server --> OIDC : session & auth
-    Server --> Logger : logs events
 }
 
-package "AI Agent Layer" {
-    [src/agent.js\nLangGraph Agent] as Agent
+package "🤖 AI LAYER (Agent & Tools)" {
+    [src/agent.js\nLangGraph Graph] as Agent
+    [State Management\n(messages, config)] as AgentState
+    [LLM Node] as LLMNode
+    [Tool Node] as ToolNode
+    [get_current_time\n(Public)] as ToolPublic
+    [get_user_profile\n(Protected)] as ToolProtected
+    [requestLogin\n(Signal)] as ToolLogin
     [MemorySaver\nCheckpointer] as Memory
-    [ChatGoogleGenerativeAI\nModel Client] as LLMClient
-    
-    Agent --> Memory : conversation state
-    Agent --> LLMClient : prompt & invoke
+    [Dict Store] as MemStore
+    [ChatGoogleGenerativeAI] as LLMClient
 }
 
-package "AI Tools (src/tools.js)" {
-    [get_current_time\n(Public Tool)] as ToolTime
-    [get_user_profile\n(Auth Required)] as ToolProfile
-    [request_login\n(Explicit Login Intent)] as ToolLogin
-    [isAuthRequiredSignal()\n(Definitive Signal Validator)] as SignalDetector
+package "🔐 AUTH LAYER (Security)" {
+    [isAuthRequiredSignal()\nMessage Parser] as SignalDetector
 }
 
-cloud "External Services" {
-    [Auth0\nUniversal Login] as Auth0
+cloud "☁️ EXTERNAL SERVICES" {
+    [Auth0\nOIDC Provider] as Auth0
     [Google Gemini API] as GeminiAPI
 }
 
-' Frontend <-> Backend
-ChatUI -right-> Server : POST /api/chat (SSE Stream)
+' === INTERNAL STRUCTURE ===
+HTML ..> AuthUI : import
+HTML ..> ChatUI : import
+HTML ..> Style : load
+ChatUI ..> EventListener : use
+
+Server --> OIDC : use middleware
+Server --> SessionStore : track sessions
+Server --> Logger : log activity
+
+Agent --> AgentState : read/write state
+Agent --> LLMNode : invoke
+Agent --> ToolNode : invoke
+LLMNode --> LLMClient : prompt
+LLMClient <--> GeminiAPI : generateContent
+
+ToolNode --> ToolPublic : route
+ToolNode --> ToolProtected : route
+ToolNode --> ToolLogin : route
+
+Agent --> Memory : save state
+Memory --> MemStore : persist
+
+' === CROSS-LAYER CONNECTIONS ===
+ChatUI --> Server : POST /api/chat
+Server --> Agent : invoke(messages, config)
+Agent --> SignalDetector : messages[]
+SignalDetector --> Server : TRUE/FALSE
+
+Server --> EventListener : SSE stream
+
 AuthUI --> Server : GET /api/auth/status\nGET /api/me
 HTML --> Server : GET /auth/login\nGET /auth/logout
 
-' Backend Auth
-OIDC <--> Auth0 : OAuth 2.0 / OIDC Authorization Code Flow
-
-' Backend <-> Agent
-Server --> Agent : agent.invoke(messages, config)
-Agent --> ToolTime : calls public tool
-Agent --> ToolProfile : calls profile tool
-Agent --> ToolLogin : calls login request
-Server --> SignalDetector : inspects ToolMessage trace (ignores LLM text)
-LLMClient <--> GeminiAPI : generateContent (Function Calling)
+OIDC <--> Auth0 : OAuth 2.0 / OIDC
 
 @enduml
 
@@ -73,82 +89,196 @@ autonumber
 skinparam shadowing false
 skinparam roundcorner 6
 skinparam defaultFontName Arial
+skinparam lifelineStrategy solid
 
-title Express AI Assistant - Definitive Signal & Authentication Flow
+title Express AI Assistant - Signal-Based Auth & Chat Flow
 
-actor User
-participant "Chat UI\n(chat.js)" as UI
-participant "Express Server\n(server.js)" as Server
-participant "LangGraph Agent\n(agent.js)" as Agent
-participant "Tools\n(tools.js)" as Tools
-participant "Gemini LLM" as LLM
-participant "Auth0" as Auth0
+actor User as user
+participant "Browser\n(chat.js)" as ui
+participant "Express Server\n(server.js)" as server
+participant "LangGraph\nAgent" as agent
+participant "Tool\nExecutor" as tools
+participant "Gemini API" as llm
+participant "Auth0" as auth0
 
-== 1. Public Tool Flow (Anonymous) ==
-User -> UI : "What time is it in Tokyo?"
-UI -> Server : POST /api/chat { message, threadId }
-Server -> Agent : agent.invoke() [authenticated: false]
-Agent -> LLM : Prompt user message
-LLM --> Agent : FunctionCall: get_current_time({ timezone: "Asia/Tokyo" })
-Agent -> Tools : execute get_current_time
-Tools --> Agent : ToolMessage: "4:57 AM JST"
-Agent -> LLM : Return tool output
-LLM --> Agent : AIMessage: "It's 4:57 AM in Tokyo."
-Agent --> Server : result { messages }
-Server -> Server : isAuthRequiredSignal(messages) -> false
-Server -> UI : SSE { token: "It's 4:57 AM in Tokyo." }
-Server -> UI : SSE { done: true }
-UI -> User : Displays answer (No login button)
-
-== 2. Auth-Protected Tool Flow (Definitive Signal Base) ==
-User -> UI : "Who am I?"
-UI -> Server : POST /api/chat { message, threadId }
-Server -> Agent : agent.invoke() [authenticated: false]
-Agent -> LLM : Prompt user message
-LLM --> Agent : FunctionCall: get_user_profile()
-Agent -> Tools : execute get_user_profile (config.authenticated = false)
-note over Tools #ffebee
-  Definitive Signal:
-  returns { requiresAuth: true, error: "AUTH_REQUIRED" }
+rect rgb(200, 220, 255)
+== 1️⃣ PUBLIC TOOL (Anonymous User) ==
+user -> ui : "What time is it in Tokyo?"
+ui -> server : POST /api/chat\n{ message, threadId }
+note over server
+  config: {
+    authenticated: false,
+    user: null
+  }
 end note
-Tools --> Agent : ToolMessage (content contains requiresAuth: true)
-Agent -> LLM : Provide tool result
-LLM --> Agent : AIMessage: "Please log in so I can look up your profile."
-Agent --> Server : result { messages: [..., ToolMessage, AIMessage] }
 
-Server -> Server : isAuthRequiredSignal(messages)\n-> Inspects ONLY ToolMessage (never parses LLM text) -> TRUE
-Server -> UI : SSE { token: "Please log in so I can look up your profile." }
-Server -> UI : SSE { requireAuth: true, error: "You need to log in..." }
-Server -> UI : SSE { done: true }
+server -> agent : invoke(messages, config)
+agent -> llm : Prompt:\n"What time is it in Tokyo?"
+llm --> agent : FunctionCall:\nget_current_time\n({ timezone: "Asia/Tokyo" })
 
-UI -> UI : receives event.requireAuth == true\n(Zero keyword string matching on bot text)
-UI -> User : Displays bot explanation + Appends [🔐 Log in] button
+agent -> tools : execute(get_current_time, { ... })
+tools --> agent : ToolMessage:\n"4:57 AM JST"
 
-== 3. Authentication Flow ==
-User -> UI : Clicks [🔐 Log in] button
-UI -> Server : GET /auth/login
-Server -> Auth0 : Redirects to Universal Login
-User -> Auth0 : Authenticates with credentials
-Auth0 -> Server : Redirects to /auth/callback with code
-Server -> Server : Issues secure HTTP-only session cookie
-Server -> UI : Redirects back to "/"
-UI -> Server : GET /api/auth/status
-Server --> UI : { authenticated: true }
-UI -> Server : GET /api/me
-Server --> UI : { name: "Alice", email: "alice@example.com" }
-UI -> User : Updates header: "Alice" + displays [Log out]
+agent -> llm : Tool result: "4:57 AM JST"
+llm --> agent : AIMessage:\n"It's 4:57 AM in Tokyo."
 
-== 4. Authenticated User Flow ==
-User -> UI : "Who am I?"
-UI -> Server : POST /api/chat [with session cookie]
-Server -> Agent : agent.invoke() [authenticated: true, user: Alice]
-Agent -> Tools : get_user_profile() (authenticated = true)
-Tools --> Agent : ToolMessage: { name: "Alice", email: "alice@example.com" }
-Agent -> LLM : Return Alice profile
-LLM --> Agent : AIMessage: "You are Alice (alice@example.com)."
-Server -> Server : isAuthRequiredSignal(messages) -> FALSE
-Server -> UI : SSE { token: "You are Alice..." }
-Server -> UI : SSE { done: true }
-UI -> User : Displays profile (No login button)
+agent --> server : result {\n  messages: [\n    UserMessage,\n    FunctionCall ToolMessage,\n    AIMessage\n  ]\n}
+
+server -> server : CHECK: isAuthRequiredSignal()\n→ Scans ToolMessage.content\n→ requiresAuth flag? NO\n→ Return: FALSE
+note over server #c8f0c8
+  No requiresAuth flag found
+  in any ToolMessage → safe to stream
+end note
+
+server -> ui : SSE:\ntoken: "It's"
+server -> ui : SSE:\ntoken: " 4:57"
+server -> ui : SSE:\ntoken: " AM in Tokyo."
+server -> ui : SSE:\ndone: true
+
+ui -> ui : Render tokens\nNo login button appended
+ui -> user : Displays answer
+end rect
+
+rect rgb(255, 220, 200)
+== 2️⃣ PROTECTED TOOL (Anonymous → Definitive Signal) ==
+user -> ui : "Who am I?"
+ui -> server : POST /api/chat\n{ message, threadId }
+note over server
+  config: {
+    authenticated: false,
+    user: null
+  }
+end note
+
+server -> agent : invoke(messages, config)
+agent -> llm : Prompt:\n"Who am I?"
+llm --> agent : FunctionCall:\nget_user_profile()
+
+agent -> tools : execute(get_user_profile, config)
+note over tools #ffcccc
+  ⚠️ DEFINITIVE SIGNAL:
+  Requested tool requires auth.
+  authenticated flag = false
+  → Reject with requiresAuth signal
+end note
+tools --> agent : ToolMessage:\n{\n  requiresAuth: true,\n  error: "AUTH_REQUIRED",\n  content: "User must authenticate"\n}
+
+agent -> llm : Tool returned error:\n"User must authenticate"
+llm --> agent : AIMessage:\n"You need to log in\nto see your profile."
+
+agent --> server : result {\n  messages: [\n    UserMessage,\n    FunctionCall ToolMessage,\n    ToolMessage { requiresAuth: true },\n    AIMessage\n  ]\n}
+
+server -> server : CHECK: isAuthRequiredSignal()\n→ Scans ALL ToolMessage items\n→ Find requiresAuth: true?\n→ YES!\n→ Return: TRUE
+note over server #ffcccc
+  Definitive: ToolMessage explicitly
+  declares auth required
+  (ignores LLM text content)
+end note
+
+server -> ui : SSE:\ntoken: "You need"
+server -> ui : SSE:\ntoken: " to log in"
+server -> ui : SSE:\ntoken: " to see your profile."
+server -> ui : SSE event:\nrequireAuth: true
+server -> ui : SSE:\ndone: true
+
+ui -> ui : ReceiveMessage handler:\nif event.requireAuth === true:\n  showLoginPrompt()
+ui -> user : Displays explanation\n+ [🔐 Log in] button
+end rect
+
+rect rgb(200, 255, 200)
+== 3️⃣ AUTHENTICATION (OAuth 2.0 Flow) ==
+user -> ui : Clicks [🔐 Log in]
+ui -> server : GET /auth/login
+note over server
+  express-openid-connect
+  middleware triggers redirect
+end note
+server -> auth0 : Redirect to:\n/authorize?...\n(client_id, redirect_uri, state)
+
+auth0 -> user : Shows login form
+user -> auth0 : Enters credentials\n(email, password)
+note over auth0
+  Auth0 validates credentials
+  Issues authorization code
+end note
+auth0 -> server : Redirects to:\n/auth/callback?code=...
+
+note over server
+  OIDC middleware:
+  1. Exchange code for tokens
+  2. Validate JWT (id_token)
+  3. Extract claims (name, email, sub)
+  4. Create session cookie
+  5. Store in session store
+end note
+server -> server : Issues HTTP-only\nSecure session cookie
+
+server -> ui : 302 Redirect → /
+ui -> server : GET /
+server -> ui : 200 + index.html
+
+ui -> server : GET /api/auth/status
+server --> ui : { authenticated: true }
+
+ui -> server : GET /api/me
+server --> ui : {\n  name: "Alice",\n  email: "alice@example.com",\n  sub: "auth0|...",\n  ...claims\n}
+
+ui -> ui : Update header:\n"Alice" profile\nShow logout button
+ui -> user : "Welcome back, Alice!"
+end rect
+
+rect rgb(220, 200, 255)
+== 4️⃣ AUTHENTICATED FLOW (Protected Tool Success) ==
+user -> ui : "Who am I?" (again)
+ui -> server : POST /api/chat\n{ message, threadId }\n+ session cookie
+note over server
+  express-openid-connect middleware
+  validates session cookie
+  Extracts claims from session
+end note
+
+note over server
+  config: {
+    authenticated: true,
+    user: {
+      name: "Alice",
+      email: "alice@example.com",
+      ...
+    }
+  }
+end note
+
+server -> agent : invoke(messages, config)
+agent -> llm : Prompt with context:\n"User is Alice (alice@example.com)\nQuestion: Who am I?"
+
+llm --> agent : FunctionCall:\nget_user_profile()
+
+agent -> tools : execute(get_user_profile, config)
+note over tools #c8f0c8
+  ✓ ALLOW: authenticated = true
+  Return user data from config
+end note
+tools --> agent : ToolMessage:\n{\n  name: "Alice",\n  email: "alice@example.com"\n}
+
+agent -> llm : Tool returned:\nAlice's profile data
+
+llm --> agent : AIMessage:\n"You are Alice\n(alice@example.com)."
+
+agent --> server : result {\n  messages: [\n    UserMessage,\n    FunctionCall ToolMessage,\n    ToolMessage { name, email },\n    AIMessage\n  ]\n}
+
+server -> server : CHECK: isAuthRequiredSignal()\n→ Scans ToolMessage items\n→ requiresAuth: true?\n→ NO\n→ Return: FALSE
+note over server #c8f0c8
+  No auth signal detected
+  Stream response normally
+end note
+
+server -> ui : SSE:\ntoken: "You are"
+server -> ui : SSE:\ntoken: " Alice"
+server -> ui : SSE:\ntoken: " (alice@example.com)."
+server -> ui : SSE:\ndone: true
+
+ui -> ui : Render tokens\nNo login button
+ui -> user : "You are Alice (alice@example.com)."
+end rect
 
 @enduml
