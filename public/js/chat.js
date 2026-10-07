@@ -12,36 +12,6 @@ const getThreadId = () => {
 // Initialize CHAT object after DOM is ready
 let CHAT = null;
 
-function initChat() {
-  CHAT = {
-    threadId: getThreadId(),
-    log: document.getElementById("chat-log"),
-    form: document.getElementById("chat-form"),
-    input: document.getElementById("chat-input"),
-    sendBtn: document.getElementById("send-btn"),
-    newChatBtn: document.getElementById("new-chat"),
-    messagesReceived: false,
-  };
-
-  // Attach event listeners
-  CHAT.form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    sendMessage();
-  });
-
-  CHAT.newChatBtn.addEventListener("click", () => {
-    // Create new conversation and update localStorage
-    CHAT.threadId = crypto.randomUUID();
-    localStorage.setItem("threadId", CHAT.threadId);
-    CHAT.log.innerHTML = "";
-    greet();
-    CHAT.input.focus();
-  });
-
-  // Greet on chat screen show
-  greet();
-}
-
 function addMessage(role, text) {
   const el = document.createElement("div");
   el.className = "msg " + role;
@@ -70,7 +40,7 @@ function showLoginButton(targetMsg) {
   loginLink.textContent = "🔐 Log in";
   loginLink.onclick = (e) => {
     e.preventDefault();
-    login(); // NEW (Phase 1): Call Auth0Client login
+    login();
   };
 
   btnWrapper.appendChild(loginLink);
@@ -98,7 +68,7 @@ async function sendMessage() {
       body: JSON.stringify({
         message: text,
         threadId: CHAT.threadId,
-        accessToken, // NEW (Phase 1): Send access token to backend
+        accessToken,
       }),
     });
 
@@ -173,6 +143,40 @@ async function sendMessage() {
     CHAT.sendBtn.disabled = false;
     CHAT.input.focus();
   }
+}
+
+function initChat() {
+  CHAT = {
+    threadId: getThreadId(),
+    log: document.getElementById("chat-log"),
+    form: document.getElementById("chat-form"),
+    input: document.getElementById("chat-input"),
+    sendBtn: document.getElementById("send-btn"),
+    newChatBtn: document.getElementById("new-chat"),
+    messagesReceived: false,
+  };
+
+  if (!CHAT.form) {
+    console.error("Chat form not found in DOM");
+    return;
+  }
+
+  // Attach event listeners
+  CHAT.form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendMessage();
+  });
+
+  CHAT.newChatBtn.addEventListener("click", () => {
+    CHAT.threadId = crypto.randomUUID();
+    localStorage.setItem("threadId", CHAT.threadId);
+    CHAT.log.innerHTML = "";
+    greet();
+    CHAT.input.focus();
+  });
+
+  // Greet on chat screen show
+  greet();
 }
 
 // Initialize chat UI after DOM and auth are ready

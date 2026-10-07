@@ -9,9 +9,13 @@ let AUTH = {
 // Initialize Auth0Client from CDN
 async function initAuth() {
   try {
-    // Load Auth0Client from CDN
+    // Wait for Auth0Client to load from CDN
     if (typeof Auth0Client === "undefined") {
-      console.error("Auth0Client not loaded");
+      console.error("Auth0Client not loaded from CDN. Check network tab.");
+      // Set AUTH as unauthenticated fallback
+      AUTH.authenticated = false;
+      AUTH.user = { name: "Guest", email: "" };
+      renderAuthUI();
       return;
     }
 
