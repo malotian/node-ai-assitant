@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Assistant</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <!-- Always show chat screen -->
+  <div id="chat-screen" class="screen">
+    <header>
+      <strong>🤖 Assistant</strong>
+      <span class="grow"></span>
+      <span id="user-name" class="muted"></span>
+      <button class="btn small ghost" id="new-chat">New chat</button>
+      <a class="btn small ghost" id="auth-link" href="/auth/login">Log in</a>
+      <a class="btn small ghost" id="logout-link" href="/auth/logout" style="display: none;">Log out</a>
+    </header>
+    <div id="chat-log"></div>
+    <form id="chat-form">
+      <input id="chat-input" autocomplete="off" autofocus placeholder="Type your message..." />
+      <button class="btn" id="send-btn">Send</button>
+    </form>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/chat.js"></script>
+</body>
+</html>
