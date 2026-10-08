@@ -28,13 +28,17 @@ Open http://localhost:3000
 
 ```bash
 npm run docker:up      # start app in Docker
+npm run docker:debug   # start app + mitmproxy (outbound HTTP inspection)
 npm run docker:logs    # follow app logs
-npm run docker:down    # stop containers
+npm run docker:down    # stop containers (both modes)
 ```
 
 | Service | URL |
 |---------|-----|
 | App | http://localhost:3000 |
+| mitmproxy web UI (`docker:debug` only) | http://localhost:8081 |
+
+Code is copied into the image at build time: after a change, run `docker:up` / `docker:debug` again to rebuild. Stop any local server first (`npm run stop`); both use port 3000.
 
 ## Debugging & Observability
 

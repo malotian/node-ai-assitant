@@ -1,18 +1,27 @@
 // Chat UI and logic
-// Persist threadId across page loads/logins to maintain conversation history
-const getThreadId = () => {
-  let threadId = localStorage.getItem("threadId");
-  if (!threadId) {
-    threadId = crypto.randomUUID();
-    localStorage.setItem("threadId", threadId);
-    log("chat", "No saved thread, started new threadId:", threadId);
-  } else {
-    log("chat", "Reusing saved threadId (server keeps this conversation's history):", threadId);
-  }
-  return threadId;
-};
-
 const getHistoryKey = (threadId) => `chat_history_${threadId}`;
+
+// A thread belongs to one user ("guest" or the Auth0 sub). Logging in, logging out or
+// switching accounts starts a new thread, matching the server, which scopes threads per user.
+function startNewThread(owner) {
+  localStorage.removeItem(getHistoryKey(localStorage.getItem("threadId")));
+  const threadId = crypto.randomUUID();
+  localStorage.setItem("threadId", threadId);
+  localStorage.setItem("threadOwner", owner);
+  log("chat", "Started new threadId:", threadId, "for", owner);
+  return threadId;
+}
+
+function getThreadId(owner) {
+  const threadId = localStorage.getItem("threadId");
+  if (threadId && localStorage.getItem("threadOwner") === owner) {
+    log("chat", "Reusing saved threadId (server keeps this conversation's history):", threadId);
+    return threadId;
+  }
+  return startNewThread(owner);
+}
+
+const currentOwner = () => (AUTH.authenticated && AUTH.user?.sub) || "guest";
 
 function loadHistory(threadId) {
   try {
@@ -60,18 +69,12 @@ function showLoginButton(targetMsg) {
   if (targetMsg.querySelector(".login-action-btn")) return;
   const btnWrapper = document.createElement("div");
   btnWrapper.className = "auth-action-wrapper";
-  btnWrapper.style.marginTop = "10px";
 
   const loginLink = document.createElement("a");
   loginLink.className = "btn small login-action-btn";
   loginLink.href = "/auth/login";
   loginLink.textContent = "🔐 Log in";
-  loginLink.addEventListener("click", () => {
-    log("auth", "Log in clicked (from chat) -> /auth/login");
-    if (CHAT && CHAT.lastUserPrompt) {
-      localStorage.setItem("pendingMessage", CHAT.lastUserPrompt);
-    }
-  });
+  loginLink.addEventListener("click", () => log("auth", "Log in clicked (from chat) -> /auth/login"));
   log("chat", "Showing Log in button (server sent requireAuth)");
 
   btnWrapper.appendChild(loginLink);
@@ -84,7 +87,7 @@ function restoreHistory() {
     CHAT.log.innerHTML = "";
     for (const msg of history) {
       const el = addMessage(msg.role, msg.text);
-      if (msg.requireAuth && !AUTH.authenticated) {
+      if (msg.requireAuth) {
         showLoginButton(el);
       }
     }
@@ -95,7 +98,6 @@ function restoreHistory() {
 }
 
 async function sendMessageText(text) {
-  CHAT.lastUserPrompt = text;
   addMessage("user", text);
   saveMessage(CHAT.threadId, "user", text, false);
   CHAT.sendBtn.disabled = true;
@@ -175,16 +177,11 @@ async function sendMessageText(text) {
       }
     }
 
-    // Definitive action: only show login button if server signaled that auth is required
-    // and the user is not already authenticated. Never inspect LLM text for keywords!
+    // Show the login button only on the server's signal; never inspect LLM text for keywords.
+    // Logged-in users can get it too (e.g. expired session), so it is not gated on AUTH.
     if (authRequired) {
-      localStorage.setItem("pendingMessage", text);
-      if (!AUTH.authenticated) {
-        showLoginButton(botMsg);
-        CHAT.log.scrollTop = CHAT.log.scrollHeight;
-      }
-    } else {
-      localStorage.removeItem("pendingMessage");
+      showLoginButton(botMsg);
+      CHAT.log.scrollTop = CHAT.log.scrollHeight;
     }
 
     saveMessage(CHAT.threadId, "bot", botMsg.textContent, authRequired);
@@ -203,7 +200,7 @@ async function sendMessageText(text) {
 
 async function sendMessage() {
   const text = CHAT.input.value.trim();
-  if (!text) return;
+  if (!text || !CHAT.threadId) return; // threadId is set once auth status is known
 
   CHAT.input.value = "";
   await sendMessageText(text);
@@ -211,13 +208,12 @@ async function sendMessage() {
 
 function initChat() {
   CHAT = {
-    threadId: getThreadId(),
+    threadId: null,
     log: document.getElementById("chat-log"),
     form: document.getElementById("chat-form"),
     input: document.getElementById("chat-input"),
     sendBtn: document.getElementById("send-btn"),
     newChatBtn: document.getElementById("new-chat"),
-    lastUserPrompt: null,
   };
 
   if (!CHAT.form) {
@@ -232,38 +228,23 @@ function initChat() {
   });
 
   CHAT.newChatBtn.addEventListener("click", () => {
-    const oldThreadId = CHAT.threadId;
-    localStorage.removeItem(getHistoryKey(oldThreadId));
-    localStorage.removeItem("pendingMessage");
-    CHAT.threadId = crypto.randomUUID();
-    localStorage.setItem("threadId", CHAT.threadId);
-    CHAT.lastUserPrompt = null;
-    log("chat", "New chat, threadId:", CHAT.threadId);
+    CHAT.threadId = startNewThread(currentOwner());
     CHAT.log.innerHTML = "";
     greet();
     CHAT.input.focus();
   });
-
-  log("chat", "Chat ready, threadId:", CHAT.threadId);
 }
 
 async function startChat() {
   initChat();
 
-  // Wait until authentication status is verified
+  // The thread depends on who is logged in, so wait for auth status first
   await authReady;
+  CHAT.threadId = getThreadId(currentOwner());
+  log("chat", "Chat ready, threadId:", CHAT.threadId);
 
-  const restored = restoreHistory();
-  if (!restored) {
+  if (!restoreHistory()) {
     greet();
-  }
-
-  // If user just logged in and had a pending message that required auth, resume it automatically
-  const pending = localStorage.getItem("pendingMessage");
-  if (AUTH.authenticated && pending) {
-    localStorage.removeItem("pendingMessage");
-    log("chat", "Resuming pending message after authentication:", pending);
-    await sendMessageText(pending);
   }
 }
 

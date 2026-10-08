@@ -6,46 +6,49 @@ skinparam roundcorner 6
 skinparam defaultFontName Arial
 skinparam lifelineStrategy solid
 
-title Sequence: Session Expiration & Recovery
+title Sequence: Token Refresh & Session Expiration
 
 actor User
 participant "Browser\n(chat.js)" as UI
 participant "Express Server\n(server.js)" as Server
+participant "Auth0" as Auth0
+
+== Access token expires (session still valid): invisible to the user ==
+
+User -> UI : "Who am I?"
+UI -> Server : POST /api/chat + session cookie
+Server -> Server : getAccessToken(): accessToken.isExpired()
+Server -> Auth0 : POST /oauth/token\n(grant_type=refresh_token)
+Auth0 --> Server : new access token
+Server --> UI : Profile from /userinfo (diagram 04)
+
+== Session expires (idle 24 h or 7 days absolute) ==
 
 note over UI,Server
-  Time passes: 24 hours
-  Session cookie expires
+  express-openid-connect no longer accepts the
+  cookie: the user is treated as a guest
 end note
 
-User -> UI : "Who am I?" (stale cookie in browser)
-UI -> Server : POST /api/chat\n{ message, threadId }\n+ expired session cookie
-note over Server
-  express-openid-connect middleware:
-  Session lookup fails
-  Treat as unauthenticated
-  config: { authenticated: false }
-end note
+alt Page reloaded
+  UI -> Server : GET /api/auth/status
+  Server --> UI : { authenticated: false }
+  UI -> UI : Owner changed (sub → guest):\nnew thread, guest greeting
+else Page left open
+  User -> UI : "Who am I?"
+  UI -> Server : POST /api/chat (expired cookie)
+  note over Server
+    authenticated: false
+    thread_id = "anonymous:<threadId>"
+  end note
+  Server --> UI : SSE { requireAuth: true }
+  UI -> User : Message + [🔐 Log in] button
+end
 
-Server --> UI : Protected tool triggers\nrequireAuth: true signal
-note over UI #fff3e0
-  Auth signal received
-  UI shows [🔐 Log in] button
-end note
-
-UI -> User : Message + [🔐 Log in] button
 User -> UI : Clicks [🔐 Log in]
-
-note over UI,Server
-  User goes through OAuth flow again
-  New session established
+note over UI,Auth0
+  OAuth flow again (diagram 03)
 end note
-
-UI -> Server : POST /api/chat\n(refreshed session cookie)
-note over Server
-  New session valid
-  config: { authenticated: true }
-end note
-
-Server --> UI : Protected tool succeeds\nUser data returned
+UI -> UI : Owner = user's sub again:\nnew thread, fresh greeting
+User -> UI : Asks again (nothing is retried automatically)
 
 @enduml

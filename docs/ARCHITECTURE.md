@@ -18,13 +18,13 @@ An AI assistant with a clean frontend/backend split. Anyone can chat anonymously
 | `GET /healthz` | Health check (Docker) |
 | `GET /auth/login`, `/auth/signup`, `/auth/logout`, `/auth/callback` | Auth0 Universal Login |
 | `GET /api/auth/status` | `{ authenticated: boolean }` |
-| `GET /api/me` | `{ name, email, picture }`, 401 when anonymous |
+| `GET /api/me` | `{ sub, name, email, picture }`, 401 when anonymous |
 | `POST /api/chat` | `{ message, threadId }` → Server-Sent Events, works anonymous or logged in |
 | `POST /api/internal/proxy-log` | Receives mitmproxy events (requires `x-internal-proxy-log: true`), see [LOGGING.md](LOGGING.md) |
 
 ### `agent.js` — LangGraph agent
 - `createAgent` (from `langchain`) with Google Gemini (`LLM_MODEL`)
-- `MemorySaver` checkpointer keyed by `thread_id`: in-memory, lost on restart
+- `MemorySaver` checkpointer keyed by `thread_id` (`<user.sub>:<threadId>`): in-memory, lost on restart
 
 ### `tools.js` — AI tools and the auth signal
 | Tool | Access | Behaviour |
@@ -41,8 +41,8 @@ Winston console logger plus LangChain callbacks that log LLM and tool calls with
 ## Frontend (`public/`)
 
 - **`index.html`** — a single chat screen. The header shows the user name ("Guest" when anonymous), *New chat*, and *Log in* or *Log out*.
-- **`js/auth.js`** — on load calls `/api/auth/status`, then `/api/me` if logged in; exposes `AUTH` and the `authReady` promise. Logging out clears the local thread and history.
-- **`js/chat.js`** — keeps `threadId` and the chat history in `localStorage`, posts to `/api/chat`, and reads the SSE stream. When the stream contains `requireAuth: true` it appends a *🔐 Log in* button and saves the prompt as `pendingMessage`. After login the pending prompt is re-sent automatically.
+- **`js/auth.js`** — on load calls `/api/auth/status`, then `/api/me` if logged in; exposes `AUTH` and the `authReady` promise.
+- **`js/chat.js`** — keeps `threadId`, its owner (`guest` or the user's `sub`) and the chat history in `localStorage`. It posts to `/api/chat` and reads the SSE stream. When the stream contains `requireAuth: true` it appends a *🔐 Log in* button. Nothing is retried after login: when the owner changes (login, logout, other account) it starts a new thread.
 - **`style.css`** — light/dark (system preference), responsive.
 
 ## Chat request flow
@@ -62,7 +62,7 @@ Browser ──cookie──▶ Express (express-openid-connect)
 3. The agent runs to completion. The `__` prefix on `__accessToken` keeps the token out of LangChain tracing metadata.
 4. The server sends the final assistant text as one `{ token }` event. If `isAuthRequiredSignal` matched, it then sends `{ requireAuth: true, error }`, followed by `{ done: true }`.
 
-The `threadId` is kept across login, so the conversation continues after the user authenticates.
+Each conversation belongs to one user. The server prefixes the browser's `threadId` with `user.sub`, so a guest conversation is never carried into a login and nobody can read another user's thread by sending its id. After login the user starts a fresh conversation and asks again.
 
 ### SSE events
 

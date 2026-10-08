@@ -17,6 +17,18 @@ All logs across Express, the LangChain agent, and mitmproxy outbound HTTP traffi
 2026-10-07 19:40:04 [info] 🤖 LLM response received (395ms)
 ```
 
+## Running with mitmproxy
+
+| Mode | Start | Stop |
+|------|-------|------|
+| All in Docker | `npm run docker:debug`, then `npm run docker:logs` | `npm run docker:down` |
+| App local, proxy in Docker | `docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d mitmproxy`, then `npm run debug:proxy` | Ctrl+C, then `npm run docker:down` |
+
+- Web UI with full requests and responses: http://localhost:8081. It shows raw API keys and tokens, so use it only locally.
+- `npm start` / `npm run dev` do **not** use the proxy, so no `🌐 [mitmproxy]` lines appear.
+- The addon relays to the app at `app:3000` (Docker), then `host.docker.internal:3000`, then `127.0.0.1:3000`. Set `APP_INTERNAL_URL` to override.
+- The app must trust the mitmproxy CA (`docker/mitmproxy/mitmproxy-ca-cert.pem`, generated on first start). Both modes set `NODE_EXTRA_CA_CERTS` for you.
+
 ## Layers of Logging
 
 1. **Express Server (`src/server.js`)**

@@ -88,7 +88,7 @@ npm run test:all    # also test/api-auth-signal.test.js; needs the server runnin
 Manual checks:
 - [ ] Anonymous chat works (`What time is it in Tokyo?`)
 - [ ] Anonymous "Who am I?" shows the *🔐 Log in* button
-- [ ] Login completes and the pending prompt is re-sent automatically
+- [ ] Login completes and starts a fresh conversation (guest chat is not carried over)
 - [ ] Logged in, "Who am I?" returns data from `/userinfo`
 - [ ] The access token refreshes after it expires
 - [ ] *New chat* starts a separate conversation; *Log out* returns to Guest

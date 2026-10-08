@@ -113,8 +113,8 @@ app.get("/", (req, res) => res.sendFile(pub("index.html")));
 
 // --- API: User Info ---
 app.get("/api/me", requireUser, (req, res) => {
-  const { name, email, picture } = req.oidc.user;
-  res.json({ name, email, picture });
+  const { sub, name, email, picture } = req.oidc.user;
+  res.json({ sub, name, email, picture });
 });
 
 // --- API: Authentication Status ---
@@ -164,8 +164,9 @@ app.post("/api/chat", async (req, res) => {
 
   logger.info(`Chat request: user=${user.name} authenticated=${authenticated} message="${message.slice(0, 50)}..."`);
 
-  // Use same thread ID for anonymous and authenticated (preserves conversation history after login)
-  const thread_id = threadId.slice(0, 64);
+  // Scope memory per user: a thread id never carries a guest conversation into a login,
+  // and one user cannot read another user's thread by sending its id
+  const thread_id = `${user.sub}:${threadId.slice(0, 64)}`;
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",

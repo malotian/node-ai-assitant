@@ -13,7 +13,7 @@ package "CLIENT (Browser)" {
     [js/auth.js\nAuth state] as AuthUI
     [js/chat.js\nChat + SSE reader] as ChatUI
     [style.css] as Style
-    [localStorage\nthreadId, history, pendingMessage] as LocalStore
+    [localStorage\nthreadId, threadOwner, history] as LocalStore
 }
 
 package "SERVER (src/)" {
@@ -54,7 +54,7 @@ Obs --> Logger
 
 Server --> Agent : invoke(messages, configurable)
 Agent ..> Obs : callbacks
-Agent --> Memory : thread_id
+Agent --> Memory : thread_id = sub:threadId
 Agent --> LLMClient
 LLMClient <--> GeminiAPI : function calling
 Agent --> ToolTime

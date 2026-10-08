@@ -61,7 +61,7 @@ Server -> UI : SSE event: { token: "I need you to log in so I can look up your p
 Server -> UI : SSE event: { requireAuth: true,\n  error: "You need to log in to access this feature" }
 Server -> UI : SSE event: { done: true }
 
-UI -> UI : Receive event.requireAuth === true\n(Zero string parsing)\nSave prompt as pendingMessage\nAppend [🔐 Log in] button
+UI -> UI : Receive event.requireAuth === true\n(Zero string parsing)\nAppend [🔐 Log in] button
 UI -> User : Message + [🔐 Log in] button
 
 @enduml

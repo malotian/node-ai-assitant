@@ -17,7 +17,7 @@
 | [04_authenticated_protected_tool.puml](04_authenticated_protected_tool.puml) | Logged-in user asks "Who am I?" → `/userinfo` with the user's access token |
 | [05_logout_session_revocation.puml](05_logout_session_revocation.puml) | Log out → local chat cleared, session cookie cleared → Auth0 logout → back to Guest |
 | [06_error_handling_tool_exception.puml](06_error_handling_tool_exception.puml) | `/userinfo` fails → LLM explains, no auth signal; agent errors → `{ error }` event |
-| [07_session_expiration_recovery.puml](07_session_expiration_recovery.puml) | Expired session → treated as guest → auth signal → log in again |
+| [07_session_expiration_recovery.puml](07_session_expiration_recovery.puml) | Access token refreshed silently; expired session → guest → log in again → new thread |
 
 ### Viewing
 
@@ -31,7 +31,7 @@
 `server.js` passes this to `agent.invoke` on every chat request:
 ```javascript
 configurable: {
-  thread_id: string,            // from the browser, max 64 chars
+  thread_id: string,            // "<user.sub>:<threadId from browser>", scoped per user
   authenticated: boolean,
   user: { sub, name, email, ... } | { sub: "anonymous", name: "Guest" },
   __accessToken: string | null, // Auth0 access token, server-side only
@@ -48,7 +48,7 @@ configurable: {
 |------|-------|----------|
 | Login session + tokens | Encrypted HTTP-only cookie (`express-openid-connect`) | Library defaults: 24 h rolling, 7 days absolute |
 | Conversation memory | `MemorySaver`, keyed by `thread_id` | Until server restart |
-| Thread id, rendered history, pending prompt | Browser `localStorage` | Until *New chat* or logout |
+| Thread id + owner, rendered history | Browser `localStorage` | Until *New chat* or the user changes (login, logout, other account) |
 
 ### Tools
 | Tool | Access |

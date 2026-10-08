@@ -14,7 +14,6 @@ participant "Express Server\n(server.js)" as Server
 participant "Auth0" as Auth0
 
 User -> UI : Clicks [Log out]
-UI -> UI : Remove threadId, chat history\nand pendingMessage from localStorage
 UI -> Server : GET /auth/logout
 note over Server
   express-openid-connect
@@ -34,7 +33,7 @@ Auth0 -> UI : 302 → APP_BASE_URL
 
 UI -> Server : GET / , GET /api/auth/status
 Server --> UI : { authenticated: false }
-UI -> User : Header shows "Guest" + [Log in]\nNew thread, fresh greeting
+UI -> User : Header shows "Guest" + [Log in]\nUser changed (sub → guest): new thread, fresh greeting
 
 User -> UI : "Who am I?"
 UI -> Server : POST /api/chat (no session cookie)

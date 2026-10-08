@@ -55,6 +55,6 @@ UI -> Server : GET /api/me
 Server --> UI : {\n  name: "Alice",\n  email: "alice@example.com",\n  sub: "auth0|12345"\n}
 
 UI -> UI : Update header:\nDisplay "Alice"\nShow [Log out] button
-UI -> User : Restore chat history;\nre-send pendingMessage if one was saved
+UI -> User : User changed (guest → sub):\nnew thread + fresh greeting
 
 @enduml

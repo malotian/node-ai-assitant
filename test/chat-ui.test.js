@@ -93,7 +93,7 @@ describe("Chat UI Definitive Signal Button Rendering Simulation", () => {
       }
     }
 
-    if (authRequired && !isAuthenticated) {
+    if (authRequired) {
       showLoginButton(botMsg);
     }
 
@@ -151,91 +151,89 @@ describe("Chat UI Definitive Signal Button Rendering Simulation", () => {
       "Authenticated user should not see login button"
     );
   });
+
+  test("Renders login button for a logged-in user whose session expired (server sent requireAuth)", () => {
+    const { hasLoginButton } = simulateChatStreamHandler({
+      events: [
+        { token: "Your session has expired." },
+        { requireAuth: true, error: "You need to log in to access this feature" },
+        { done: true },
+      ],
+      isAuthenticated: true,
+    });
+
+    assert.strictEqual(hasLoginButton, true, "Server signal decides, not client auth state");
+  });
 });
 
-describe("Chat UI History Retention & Auth Transition Simulation", () => {
+describe("Chat UI Thread Ownership Simulation", () => {
   function createMockStorage() {
     const store = new Map();
     return {
       getItem: (k) => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => store.set(k, String(v)),
       removeItem: (k) => store.delete(k),
-      clear: () => store.clear(),
     };
   }
 
-  test("Restores full message history on reload after switching from anonymous to login", () => {
+  // Mirrors startNewThread / getThreadId in public/js/chat.js
+  function threadHelpers(storage) {
+    let n = 0;
+    const startNewThread = (owner) => {
+      storage.removeItem(`chat_history_${storage.getItem("threadId")}`);
+      const threadId = `thread-${++n}`;
+      storage.setItem("threadId", threadId);
+      storage.setItem("threadOwner", owner);
+      return threadId;
+    };
+    const getThreadId = (owner) => {
+      const threadId = storage.getItem("threadId");
+      if (threadId && storage.getItem("threadOwner") === owner) return threadId;
+      return startNewThread(owner);
+    };
+    return { startNewThread, getThreadId };
+  }
+
+  test("Reloading as the same user keeps the thread and its history", () => {
     const storage = createMockStorage();
-    const threadId = "test-thread-uuid-123";
-    storage.setItem("threadId", threadId);
+    const { getThreadId } = threadHelpers(storage);
+    const first = getThreadId("guest");
+    storage.setItem(`chat_history_${first}`, JSON.stringify([{ role: "user", text: "what time is it" }]));
 
-    // Simulate anonymous messages saved before login
-    const savedMessages = [
-      { role: "bot", text: "Hello there! I'm your assistant. (Some features require login.)", requireAuth: false },
-      { role: "user", text: "what is the time of the day", requireAuth: false },
-      { role: "bot", text: "It is currently 10:45 AM UTC.", requireAuth: false },
-      { role: "user", text: "who am I", requireAuth: false },
-      { role: "bot", text: "⚠️ You need to log in to access this feature", requireAuth: true },
-    ];
-    storage.setItem(`chat_history_${threadId}`, JSON.stringify(savedMessages));
-
-    // Simulate restore when authenticated = true
-    const restoredDOM = [];
-    const history = JSON.parse(storage.getItem(`chat_history_${threadId}`) || "[]");
-    const isAuthenticated = true;
-
-    for (const msg of history) {
-      const el = { role: msg.role, text: msg.text, hasLoginBtn: false };
-      if (msg.requireAuth && !isAuthenticated) {
-        el.hasLoginBtn = true;
-      }
-      restoredDOM.push(el);
-    }
-
-    assert.strictEqual(restoredDOM.length, 5, "All 5 prior messages must be restored");
-    assert.strictEqual(restoredDOM[1].text, "what is the time of the day");
-    assert.strictEqual(restoredDOM[2].text, "It is currently 10:45 AM UTC.");
-    assert.strictEqual(restoredDOM[3].text, "who am I");
-    assert.strictEqual(restoredDOM[4].hasLoginBtn, false, "Login button must NOT be shown when now authenticated");
+    assert.strictEqual(getThreadId("guest"), first);
+    assert.notStrictEqual(storage.getItem(`chat_history_${first}`), null);
   });
 
-  test("Pending auth message is saved on requireAuth and consumed after login", () => {
+  test("Logging in starts a new thread and drops the guest history", () => {
     const storage = createMockStorage();
+    const { getThreadId } = threadHelpers(storage);
+    const guestThread = getThreadId("guest");
+    storage.setItem(`chat_history_${guestThread}`, JSON.stringify([{ role: "user", text: "who am I" }]));
 
-    // 1. requireAuth triggers pending message storage
-    const prompt = "who am I";
-    storage.setItem("pendingMessage", prompt);
-
-    assert.strictEqual(storage.getItem("pendingMessage"), "who am I");
-
-    // 2. On return with authenticated = true, pending message is read and cleared
-    const isAuthenticated = true;
-    let resumedPrompt = null;
-    const pending = storage.getItem("pendingMessage");
-    if (isAuthenticated && pending) {
-      storage.removeItem("pendingMessage");
-      resumedPrompt = pending;
-    }
-
-    assert.strictEqual(resumedPrompt, "who am I", "Pending prompt should be retrieved for resumption");
-    assert.strictEqual(storage.getItem("pendingMessage"), null, "Pending prompt should be cleared from storage");
+    const userThread = getThreadId("auth0|alice");
+    assert.notStrictEqual(userThread, guestThread);
+    assert.strictEqual(storage.getItem(`chat_history_${guestThread}`), null);
+    assert.strictEqual(storage.getItem("threadOwner"), "auth0|alice");
   });
 
-  test("New chat clears thread history and pending message", () => {
+  test("Logging out or switching accounts also starts a new thread", () => {
     const storage = createMockStorage();
-    const oldThreadId = "old-thread";
-    storage.setItem("threadId", oldThreadId);
-    storage.setItem(`chat_history_${oldThreadId}`, JSON.stringify([{ role: "user", text: "old message" }]));
-    storage.setItem("pendingMessage", "who am I");
+    const { getThreadId } = threadHelpers(storage);
+    const alice = getThreadId("auth0|alice");
+    const bob = getThreadId("auth0|bob");
+    const guest = getThreadId("guest");
+    assert.strictEqual(new Set([alice, bob, guest]).size, 3);
+  });
 
-    // Simulate clicking New chat
-    storage.removeItem(`chat_history_${oldThreadId}`);
-    storage.removeItem("pendingMessage");
-    const newThreadId = "new-thread";
-    storage.setItem("threadId", newThreadId);
+  test("New chat replaces the thread and clears its history", () => {
+    const storage = createMockStorage();
+    const { getThreadId, startNewThread } = threadHelpers(storage);
+    const old = getThreadId("guest");
+    storage.setItem(`chat_history_${old}`, JSON.stringify([{ role: "user", text: "old message" }]));
 
-    assert.strictEqual(storage.getItem(`chat_history_${oldThreadId}`), null);
-    assert.strictEqual(storage.getItem("pendingMessage"), null);
-    assert.strictEqual(storage.getItem("threadId"), newThreadId);
+    const next = startNewThread("guest");
+    assert.notStrictEqual(next, old);
+    assert.strictEqual(storage.getItem(`chat_history_${old}`), null);
+    assert.strictEqual(storage.getItem("threadId"), next);
   });
 });
