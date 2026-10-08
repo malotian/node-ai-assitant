@@ -1,5 +1,5 @@
 {
-  "name": "express-ai-assistant",
+  "name": "node-ai-assistant",
   "version": "1.0.0",
   "description": "AI assistant: Express + Auth0 Universal Login + LangGraph agent (Gemini)",
   "main": "src/server.js",

@@ -17,7 +17,23 @@ function createAuthRequiredPayload(message = "Authentication required") {
 function isAuthRequiredSignal(messages) {
   if (!Array.isArray(messages)) return false;
 
-  for (const msg of messages) {
+  // Find start of current turn (last human/user message) so prior turns in the same thread do not trigger false positives
+  let startIndex = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const isHuman =
+      m._getType?.() === "human" ||
+      m.role === "user" ||
+      m.role === "human" ||
+      m.constructor?.name === "HumanMessage";
+    if (isHuman) {
+      startIndex = i;
+      break;
+    }
+  }
+
+  for (let i = startIndex; i < messages.length; i++) {
+    const msg = messages[i];
     // Only inspect tool execution outputs, NEVER user or assistant text messages
     const isTool =
       msg._getType?.() === "tool" ||
@@ -106,7 +122,10 @@ const getUserProfile = tool(
     }
 
     // Phase 1: call a first-party API (Auth0 /userinfo) on the user's behalf
-    const url = `https://${process.env.AUTH0_DOMAIN}/userinfo`;
+    const auth0Domain = (process.env.AUTH0_DOMAIN || process.env.ISSUER_BASE_URL || "")
+      .replace(/^https?:\/\//, "")
+      .replace(/\/$/, "");
+    const url = `https://${auth0Domain}/userinfo`;
     try {
       const started = Date.now();
       logger.debug(`get_user_profile: GET ${url} with user's access token`);

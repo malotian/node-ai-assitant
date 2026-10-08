@@ -152,3 +152,90 @@ describe("Chat UI Definitive Signal Button Rendering Simulation", () => {
     );
   });
 });
+
+describe("Chat UI History Retention & Auth Transition Simulation", () => {
+  function createMockStorage() {
+    const store = new Map();
+    return {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+      clear: () => store.clear(),
+    };
+  }
+
+  test("Restores full message history on reload after switching from anonymous to login", () => {
+    const storage = createMockStorage();
+    const threadId = "test-thread-uuid-123";
+    storage.setItem("threadId", threadId);
+
+    // Simulate anonymous messages saved before login
+    const savedMessages = [
+      { role: "bot", text: "Hello there! I'm your assistant. (Some features require login.)", requireAuth: false },
+      { role: "user", text: "what is the time of the day", requireAuth: false },
+      { role: "bot", text: "It is currently 10:45 AM UTC.", requireAuth: false },
+      { role: "user", text: "who am I", requireAuth: false },
+      { role: "bot", text: "⚠️ You need to log in to access this feature", requireAuth: true },
+    ];
+    storage.setItem(`chat_history_${threadId}`, JSON.stringify(savedMessages));
+
+    // Simulate restore when authenticated = true
+    const restoredDOM = [];
+    const history = JSON.parse(storage.getItem(`chat_history_${threadId}`) || "[]");
+    const isAuthenticated = true;
+
+    for (const msg of history) {
+      const el = { role: msg.role, text: msg.text, hasLoginBtn: false };
+      if (msg.requireAuth && !isAuthenticated) {
+        el.hasLoginBtn = true;
+      }
+      restoredDOM.push(el);
+    }
+
+    assert.strictEqual(restoredDOM.length, 5, "All 5 prior messages must be restored");
+    assert.strictEqual(restoredDOM[1].text, "what is the time of the day");
+    assert.strictEqual(restoredDOM[2].text, "It is currently 10:45 AM UTC.");
+    assert.strictEqual(restoredDOM[3].text, "who am I");
+    assert.strictEqual(restoredDOM[4].hasLoginBtn, false, "Login button must NOT be shown when now authenticated");
+  });
+
+  test("Pending auth message is saved on requireAuth and consumed after login", () => {
+    const storage = createMockStorage();
+
+    // 1. requireAuth triggers pending message storage
+    const prompt = "who am I";
+    storage.setItem("pendingMessage", prompt);
+
+    assert.strictEqual(storage.getItem("pendingMessage"), "who am I");
+
+    // 2. On return with authenticated = true, pending message is read and cleared
+    const isAuthenticated = true;
+    let resumedPrompt = null;
+    const pending = storage.getItem("pendingMessage");
+    if (isAuthenticated && pending) {
+      storage.removeItem("pendingMessage");
+      resumedPrompt = pending;
+    }
+
+    assert.strictEqual(resumedPrompt, "who am I", "Pending prompt should be retrieved for resumption");
+    assert.strictEqual(storage.getItem("pendingMessage"), null, "Pending prompt should be cleared from storage");
+  });
+
+  test("New chat clears thread history and pending message", () => {
+    const storage = createMockStorage();
+    const oldThreadId = "old-thread";
+    storage.setItem("threadId", oldThreadId);
+    storage.setItem(`chat_history_${oldThreadId}`, JSON.stringify([{ role: "user", text: "old message" }]));
+    storage.setItem("pendingMessage", "who am I");
+
+    // Simulate clicking New chat
+    storage.removeItem(`chat_history_${oldThreadId}`);
+    storage.removeItem("pendingMessage");
+    const newThreadId = "new-thread";
+    storage.setItem("threadId", newThreadId);
+
+    assert.strictEqual(storage.getItem(`chat_history_${oldThreadId}`), null);
+    assert.strictEqual(storage.getItem("pendingMessage"), null);
+    assert.strictEqual(storage.getItem("threadId"), newThreadId);
+  });
+});

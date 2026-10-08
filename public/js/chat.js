@@ -12,6 +12,28 @@ const getThreadId = () => {
   return threadId;
 };
 
+const getHistoryKey = (threadId) => `chat_history_${threadId}`;
+
+function loadHistory(threadId) {
+  try {
+    const raw = localStorage.getItem(getHistoryKey(threadId));
+    return raw ? JSON.parse(raw) : [];
+  } catch (err) {
+    console.error("Failed to load history from localStorage:", err);
+    return [];
+  }
+}
+
+function saveMessage(threadId, role, text, requireAuth = false) {
+  try {
+    const history = loadHistory(threadId);
+    history.push({ role, text, requireAuth: !!requireAuth });
+    localStorage.setItem(getHistoryKey(threadId), JSON.stringify(history));
+  } catch (err) {
+    console.error("Failed to save message to localStorage:", err);
+  }
+}
+
 // Initialize CHAT object after DOM is ready
 let CHAT = null;
 
@@ -31,6 +53,7 @@ function greet() {
     ? `Hello ${name}, I'm your personal assistant. How can I help you today?`
     : `Hello ${name}! I'm your assistant. (Some features require login.)`;
   addMessage("bot", greeting);
+  saveMessage(CHAT.threadId, "bot", greeting, false);
 }
 
 function showLoginButton(targetMsg) {
@@ -43,19 +66,38 @@ function showLoginButton(targetMsg) {
   loginLink.className = "btn small login-action-btn";
   loginLink.href = "/auth/login";
   loginLink.textContent = "🔐 Log in";
-  loginLink.addEventListener("click", () => log("auth", "Log in clicked (from chat) -> /auth/login"));
+  loginLink.addEventListener("click", () => {
+    log("auth", "Log in clicked (from chat) -> /auth/login");
+    if (CHAT && CHAT.lastUserPrompt) {
+      localStorage.setItem("pendingMessage", CHAT.lastUserPrompt);
+    }
+  });
   log("chat", "Showing Log in button (server sent requireAuth)");
 
   btnWrapper.appendChild(loginLink);
   targetMsg.appendChild(btnWrapper);
 }
 
-async function sendMessage() {
-  const text = CHAT.input.value.trim();
-  if (!text) return;
+function restoreHistory() {
+  const history = loadHistory(CHAT.threadId);
+  if (history && history.length > 0) {
+    CHAT.log.innerHTML = "";
+    for (const msg of history) {
+      const el = addMessage(msg.role, msg.text);
+      if (msg.requireAuth && !AUTH.authenticated) {
+        showLoginButton(el);
+      }
+    }
+    CHAT.log.scrollTop = CHAT.log.scrollHeight;
+    return true;
+  }
+  return false;
+}
 
-  CHAT.input.value = "";
+async function sendMessageText(text) {
+  CHAT.lastUserPrompt = text;
   addMessage("user", text);
+  saveMessage(CHAT.threadId, "user", text, false);
   CHAT.sendBtn.disabled = true;
 
   const botMsg = addMessage("bot", "…");
@@ -66,6 +108,8 @@ async function sendMessage() {
   // Everything about this turn is printed as one collapsed console group when it finishes
   const turn = [];
   let summary = "failed";
+  let authRequired = false;
+
   try {
     // Session cookie identifies the user; the server attaches the access token
     const body = JSON.stringify({ message: text, threadId: CHAT.threadId });
@@ -81,7 +125,10 @@ async function sendMessage() {
     if (response.status === 401) {
       summary = "401 (login required)";
       botMsg.textContent = "⚠️ This feature requires login. Please log in to continue.";
+      authRequired = true;
+      localStorage.setItem("pendingMessage", text);
       showLoginButton(botMsg);
+      saveMessage(CHAT.threadId, "bot", botMsg.textContent, true);
       return;
     }
 
@@ -93,7 +140,6 @@ async function sendMessage() {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let authRequired = false;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -143,20 +189,36 @@ async function sendMessage() {
 
     // Definitive action: only show login button if server signaled that auth is required
     // and the user is not already authenticated. Never inspect LLM text for keywords!
-    if (authRequired && !AUTH.authenticated) {
-      showLoginButton(botMsg);
-      CHAT.log.scrollTop = CHAT.log.scrollHeight;
+    if (authRequired) {
+      localStorage.setItem("pendingMessage", text);
+      if (!AUTH.authenticated) {
+        showLoginButton(botMsg);
+        CHAT.log.scrollTop = CHAT.log.scrollHeight;
+      }
+    } else {
+      localStorage.removeItem("pendingMessage");
     }
+
+    saveMessage(CHAT.threadId, "bot", botMsg.textContent, authRequired);
     summary = `${response.status} in ${Math.round(performance.now() - started)}ms${authRequired ? " (login required)" : ""}`;
   } catch (error) {
     console.error("[chat] Request failed:", error);
     turn.push(["Error", error]);
     botMsg.textContent = "⚠️ " + error.message;
+    saveMessage(CHAT.threadId, "bot", botMsg.textContent, false);
   } finally {
     logGroup("chat", `POST /api/chat "${text.slice(0, 40)}" → ${summary}`, turn);
     CHAT.sendBtn.disabled = false;
     CHAT.input.focus();
   }
+}
+
+async function sendMessage() {
+  const text = CHAT.input.value.trim();
+  if (!text) return;
+
+  CHAT.input.value = "";
+  await sendMessageText(text);
 }
 
 function initChat() {
@@ -168,6 +230,7 @@ function initChat() {
     sendBtn: document.getElementById("send-btn"),
     newChatBtn: document.getElementById("new-chat"),
     messagesReceived: false,
+    lastUserPrompt: null,
   };
 
   if (!CHAT.form) {
@@ -182,8 +245,12 @@ function initChat() {
   });
 
   CHAT.newChatBtn.addEventListener("click", () => {
+    const oldThreadId = CHAT.threadId;
+    localStorage.removeItem(getHistoryKey(oldThreadId));
+    localStorage.removeItem("pendingMessage");
     CHAT.threadId = crypto.randomUUID();
     localStorage.setItem("threadId", CHAT.threadId);
+    CHAT.lastUserPrompt = null;
     log("chat", "New chat, threadId:", CHAT.threadId);
     CHAT.log.innerHTML = "";
     greet();
@@ -191,13 +258,30 @@ function initChat() {
   });
 
   log("chat", "Chat ready, threadId:", CHAT.threadId);
+}
 
-  // Greet once auth state is known
-  authReady.then(greet);
+async function startChat() {
+  initChat();
+
+  // Wait until authentication status is verified
+  await authReady;
+
+  const restored = restoreHistory();
+  if (!restored) {
+    greet();
+  }
+
+  // If user just logged in and had a pending message that required auth, resume it automatically
+  const pending = localStorage.getItem("pendingMessage");
+  if (AUTH.authenticated && pending) {
+    localStorage.removeItem("pendingMessage");
+    log("chat", "Resuming pending message after authentication:", pending);
+    await sendMessageText(pending);
+  }
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initChat);
+  document.addEventListener("DOMContentLoaded", startChat);
 } else {
-  initChat();
+  startChat();
 }

@@ -99,4 +99,36 @@ describe("Definitive Authentication Signal Detection", () => {
 
     assert.strictEqual(isAuthRequiredSignal(messages), false);
   });
+
+  test("returns false in multi-turn conversation when current turn succeeds after a prior turn required auth", () => {
+    const multiTurnMessages = [
+      // Turn 1 (guest asking profile -> required auth)
+      new HumanMessage("Who am I?"),
+      new AIMessage({
+        content: "",
+        tool_calls: [{ name: "get_user_profile", id: "call_turn1", args: {} }],
+      }),
+      new ToolMessage({
+        name: "get_user_profile",
+        content: createAuthRequiredPayload("Profile requires login"),
+        tool_call_id: "call_turn1",
+      }),
+      new AIMessage("You need to log in to see your profile."),
+
+      // Turn 2 (now authenticated -> succeeded)
+      new HumanMessage("Who am I?"),
+      new AIMessage({
+        content: "",
+        tool_calls: [{ name: "get_user_profile", id: "call_turn2", args: {} }],
+      }),
+      new ToolMessage({
+        name: "get_user_profile",
+        content: JSON.stringify({ name: "Alice", email: "alice@example.com" }),
+        tool_call_id: "call_turn2",
+      }),
+      new AIMessage("You are logged in as Alice (alice@example.com)."),
+    ];
+
+    assert.strictEqual(isAuthRequiredSignal(multiTurnMessages), false);
+  });
 });

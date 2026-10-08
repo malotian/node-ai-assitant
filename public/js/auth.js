@@ -75,7 +75,15 @@ function renderAuthUI() {
   }
 
   authLink.addEventListener("click", () => log("auth", "Log in clicked -> /auth/login"));
-  logoutLink.addEventListener("click", () => log("auth", "Log out clicked -> /auth/logout"));
+  logoutLink.addEventListener("click", () => {
+    log("auth", "Log out clicked -> /auth/logout");
+    const threadId = localStorage.getItem("threadId");
+    if (threadId) {
+      localStorage.removeItem(`chat_history_${threadId}`);
+    }
+    localStorage.removeItem("threadId");
+    localStorage.removeItem("pendingMessage");
+  });
 }
 
 // Resolves once auth state is known, so chat.js can greet the user by name

@@ -18,6 +18,15 @@ const {
   PORT = 3000,
 } = process.env;
 
+const AUTH0_DOMAIN_CLEAN =
+  (AUTH0_DOMAIN || process.env.ISSUER_BASE_URL || "")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/$/, "");
+
+const ISSUER_BASE_URL_CLEAN =
+  process.env.ISSUER_BASE_URL ||
+  (AUTH0_DOMAIN_CLEAN ? `https://${AUTH0_DOMAIN_CLEAN}` : undefined);
+
 // Claims of a signed JWT (ID token, or an access token issued for an API audience)
 const decodeJwt = (token) => {
   try {
@@ -53,7 +62,7 @@ app.use(
     auth0Logout: true,
     baseURL: APP_BASE_URL,
     secret: AUTH0_SECRET,
-    issuerBaseURL: `https://${AUTH0_DOMAIN}`,
+    issuerBaseURL: ISSUER_BASE_URL_CLEAN,
     clientID: AUTH0_CLIENT_ID,
     clientSecret: AUTH0_CLIENT_SECRET,
     // Without an audience the access token is valid for Auth0 /userinfo; set AUTH0_API_AUDIENCE
