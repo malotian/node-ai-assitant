@@ -7,27 +7,27 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "stop": "fuser -k 3000/tcp 2>/dev/null || true; pkill -f '[n]ode.*src/server.js' 2>/dev/null || true",
-    "test": "node --test test/auth-signal.test.js test/chat-ui.test.js",
-    "test:all": "node --test test/*.test.js"
+    "test": "node --test test/auth-signal.test.js test/chat-ui.test.js test/observability-and-proxy.test.js",
+    "test:all": "node --test test/*.test.js",
+    "debug": "node --inspect src/server.js",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose -f docker-compose.yml -f docker-compose.debug.yml down",
+    "docker:logs": "docker compose logs -f app",
+    "debug:proxy": "NODE_USE_ENV_PROXY=1 HTTPS_PROXY=http://127.0.0.1:8080 HTTP_PROXY=http://127.0.0.1:8080 NO_PROXY=localhost,127.0.0.1 NODE_EXTRA_CA_CERTS=docker/mitmproxy/mitmproxy-ca-cert.pem node src/server.js",
+    "docker:debug": "docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d --build"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@auth0/auth0-spa-js": "^2.1.1",
     "@langchain/core": "^1.2.17",
     "@langchain/google-genai": "^2.3.2",
     "@langchain/langgraph": "^1.4.21",
-    "axios": "^1.6.5",
     "dotenv": "^17.0.0",
     "express": "^5.2.1",
-    "express-jwt": "^8.4.1",
-    "jwks-rsa": "^3.1.0",
+    "express-openid-connect": "^3.4.0",
     "langchain": "^1.5.15",
     "winston": "^3.19.0",
     "zod": "^4.0.0"
-  },
-  "devDependencies": {
-    "pm2": "^7.0.4"
   }
 }

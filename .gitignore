@@ -4,6 +4,12 @@ jspm_packages/
 web_modules/
 
 # Environment and secrets
+# Environment and secrets
+# mitmproxy CA (includes its private key)
+docker/mitmproxy/*
+!docker/mitmproxy/logger_addon.py
+__pycache__/
+*.pyc
 .env
 .env.*
 .env.local

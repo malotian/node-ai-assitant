@@ -1,0 +1,14 @@
+# App container configuration
+#   docker compose up -d --build     start the app container
+#   App: http://localhost:3000
+name: node-ai-assistant
+
+services:
+  app:
+    build: .
+    image: node-ai-assistant:latest
+    init: true
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:3000:3000
+    env_file: .env

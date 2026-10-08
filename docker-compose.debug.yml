@@ -1,0 +1,35 @@
+# Debug mode: route the app's outbound HTTP (Gemini, Auth0) through mitmproxy to see full
+# requests and responses, including bodies.
+#   npm run docker:debug        then open http://localhost:8081 (no password required)
+# Shows raw secrets (API keys, tokens): local debugging only.
+services:
+  mitmproxy:
+    image: mitmproxy/mitmproxy:12
+    restart: unless-stopped
+    command: mitmweb --web-host 0.0.0.0 -s /home/mitmproxy/.mitmproxy/logger_addon.py
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 127.0.0.1:8081:8081 # web UI
+      - 127.0.0.1:8080:8080 # proxy, also usable by `npm run debug:proxy` outside Docker
+    volumes:
+      # CA certificate the app trusts; contains the CA private key, so it is gitignored
+      - ./docker/mitmproxy:/home/mitmproxy/.mitmproxy
+    healthcheck:
+      test: ["CMD", "test", "-f", "/home/mitmproxy/.mitmproxy/mitmproxy-ca-cert.pem"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  app:
+    environment:
+      NODE_USE_ENV_PROXY: "1"
+      HTTPS_PROXY: http://mitmproxy:8080
+      HTTP_PROXY: http://mitmproxy:8080
+      NO_PROXY: localhost,127.0.0.1,app
+      NODE_EXTRA_CA_CERTS: /certs/mitmproxy-ca-cert.pem
+    volumes:
+      - ./docker/mitmproxy:/certs:ro
+    depends_on:
+      mitmproxy:
+        condition: service_healthy

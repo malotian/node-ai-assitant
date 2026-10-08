@@ -1,0 +1,21 @@
+node_modules
+npm-debug.log*
+.git
+.gitignore
+.vscode
+.idea
+
+# Secrets are passed at runtime by docker compose, never baked into the image
+.env
+.env.*
+*.env
+docker
+
+# Not needed at runtime
+test
+docs
+*.md
+*.puml
+Dockerfile
+docker-compose.yml
+.dockerignore

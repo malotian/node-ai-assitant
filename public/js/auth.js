@@ -1,76 +1,60 @@
-// Authentication state and Auth0Client initialization (Phase 1)
+// Authentication state and initialization
+// Login/logout and tokens are handled server-side (express-openid-connect);
+// the browser only asks the server whether the user is logged in.
 let AUTH = {
   authenticated: false,
   user: null,
-  accessToken: null,
-  auth0Client: null,
 };
 
-// Wait for auth0 SDK to be available
-async function waitForAuth0SDK(maxAttempts = 50) {
-  for (let i = 0; i < maxAttempts; i++) {
-    if (typeof auth0 !== "undefined" && auth0.Auth0Client) {
-      return true;
-    }
-    await new Promise(resolve => setTimeout(resolve, 100)); // Wait 100ms
+// Debug logging to the browser console; turn off with localStorage.setItem("debug", "off")
+const DEBUG = (() => {
+  try {
+    return localStorage.getItem("debug") !== "off";
+  } catch {
+    return true;
   }
-  return false;
+})();
+function log(scope, ...args) {
+  if (DEBUG) console.log(`%c[${scope}]`, "color:#7c3aed;font-weight:bold", ...args);
+}
+// One collapsed console group; each item is [label, value] and objects stay expandable
+function logGroup(scope, title, items) {
+  if (!DEBUG) return;
+  console.groupCollapsed(`%c[${scope}]%c ${title}`, "color:#7c3aed;font-weight:bold", "");
+  for (const [label, value] of items) value === undefined ? console.log(label) : console.log(label, value);
+  console.groupEnd();
 }
 
-// Initialize Auth0Client from CDN
+// Surface errors that would otherwise only show as a red line
+window.addEventListener("error", (e) => console.error("[page] Uncaught error:", e.message, `${e.filename}:${e.lineno}`));
+window.addEventListener("unhandledrejection", (e) => console.error("[page] Unhandled promise rejection:", e.reason));
+
 async function initAuth() {
+  log("page", "Loaded", { url: location.href, referrer: document.referrer || "(none)" });
+  if (document.referrer.includes(window.location.host + "/auth/callback") || document.referrer.includes(".auth0.com")) {
+    log("auth", "Returned from Auth0 login");
+  }
   try {
-    // Wait for auth0 SDK to load from CDN (max 5 seconds)
-    const loaded = await waitForAuth0SDK();
-    if (!loaded) {
-      console.error("Auth0 SDK not loaded from CDN after 5 seconds. Check network tab.");
-      // Set AUTH as unauthenticated fallback
-      AUTH.authenticated = false;
-      AUTH.user = { name: "Guest", email: "" };
-      renderAuthUI();
-      return;
-    }
-
-    // Get config from environment (set by server via script tag)
-    const domain = window.AUTH0_DOMAIN || "malotian-lab.auth0.com";
-    const clientId = window.AUTH0_CLIENT_ID || "pCsLVKSCw8ROrXqZYWA2qGYZwcREoCjJ";
-    const audience = window.AUTH0_API_AUDIENCE || "https://node-ai-assistant.example.com";
-
-    // Create Auth0Client instance using the correct global
-    AUTH.auth0Client = await auth0.Auth0Client.create({
-      domain,
-      clientId,
-      authorizationParams: {
-        redirect_uri: window.location.origin,
-        audience, // NEW: Request access tokens for API
-        scope: "openid profile email", // Request user info scopes
-      },
-    });
-
-    // Check if returning from Auth0 callback
-    if (window.location.search.includes("code=")) {
-      await AUTH.auth0Client.handleRedirectCallback();
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-
-    // Check authentication status
-    AUTH.authenticated = await AUTH.auth0Client.isAuthenticated();
+    log("auth", "Checking login status: GET /api/auth/status");
+    const response = await fetch("/api/auth/status");
+    const status = await response.json();
+    log("auth", `/api/auth/status -> ${response.status}, headers:`, Object.fromEntries(response.headers), "body:", status);
+    AUTH.authenticated = status.authenticated;
+    log("auth", "Logged in:", AUTH.authenticated);
 
     if (AUTH.authenticated) {
-      // Get user profile
-      AUTH.user = await AUTH.auth0Client.getUser();
-
-      // Get access token for API calls (NEW: Phase 1)
-      AUTH.accessToken = await AUTH.auth0Client.getTokenSilently({
-        audience,
-        scope: "openid profile email",
-      });
+      const userResponse = await fetch("/api/me");
+      AUTH.user = await userResponse.json();
+      log("auth", `/api/me -> ${userResponse.status}`, AUTH.user);
+    } else {
+      log("auth", "Guest mode. Login via /auth/login (server redirects to Auth0)");
     }
   } catch (error) {
-    console.error("Auth initialization failed:", error);
+    console.error("Auth check failed:", error);
   }
 
   renderAuthUI();
+  log("auth", "Auth ready", { authenticated: AUTH.authenticated, user: AUTH.user?.email || AUTH.user?.name || null });
 }
 
 function renderAuthUI() {
@@ -89,50 +73,10 @@ function renderAuthUI() {
     authLink.style.display = "inline";
     logoutLink.style.display = "none";
   }
+
+  authLink.addEventListener("click", () => log("auth", "Log in clicked -> /auth/login"));
+  logoutLink.addEventListener("click", () => log("auth", "Log out clicked -> /auth/logout"));
 }
 
-// NEW: Get fresh access token (auto-refreshes if needed)
-async function getAccessToken() {
-  if (!AUTH.auth0Client) return null;
-
-  try {
-    const token = await AUTH.auth0Client.getTokenSilently();
-    AUTH.accessToken = token;
-    return token;
-  } catch (error) {
-    console.error("Failed to get access token:", error);
-    return null;
-  }
-}
-
-// NEW: Login with Auth0
-async function login() {
-  if (!AUTH.auth0Client) {
-    // Fallback for if Auth0Client failed to initialize
-    window.location.href = "https://malotian-lab.auth0.com/authorize?client_id=pCsLVKSCw8ROrXqZYWA2qGYZwcREoCjJ&redirect_uri=" + encodeURIComponent(window.location.origin) + "&response_type=code&scope=openid%20profile%20email";
-    return;
-  }
-
-  await AUTH.auth0Client.loginWithRedirect({
-    authorizationParams: {
-      redirect_uri: window.location.origin,
-    },
-  });
-}
-
-// NEW: Logout with Auth0
-async function logout() {
-  if (!AUTH.auth0Client) return;
-
-  AUTH.auth0Client.logout({
-    returnTo: window.location.origin,
-  });
-}
-
-// Initialize auth immediately if DOM is ready, otherwise wait for DOMContentLoaded
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initAuth);
-} else {
-  // DOM already loaded (auth.js loaded after DOMContentLoaded event)
-  initAuth();
-}
+// Resolves once auth state is known, so chat.js can greet the user by name
+const authReady = initAuth();

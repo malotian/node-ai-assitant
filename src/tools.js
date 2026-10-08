@@ -1,6 +1,6 @@
 const { tool } = require("@langchain/core/tools");
 const { z } = require("zod");
-const axios = require("axios");
+const { logger } = require("./logger");
 
 const AUTH_REQUIRED_CODE = "AUTH_REQUIRED";
 const AUTH_REQUIRED_MARKER = "[AUTH_REQUIRED]";
@@ -95,24 +95,44 @@ const getUserProfile = tool(
   async (_input, config) => {
     const authenticated = config.configurable?.authenticated;
     if (!authenticated) {
+      logger.debug("get_user_profile: user not logged in, returning auth-required signal");
       // Return definitive structured payload signaling auth requirement
       return createAuthRequiredPayload("User profile requires authentication");
     }
 
-    const accessToken = config.configurable?.accessToken;
-    const user = config.configurable?.user || {};
+    const accessToken = config.configurable?.__accessToken;
+    if (!accessToken) {
+      return createAuthRequiredPayload("There is no user logged in");
+    }
 
-    // Phase 1: If accessToken available, could call Auth0 Management API
-    // For now, return user claims from config (same as before)
-    // In Phase 2+, this could call Auth0 API with accessToken for more data
-
-    return JSON.stringify({
-      name: user.name,
-      email: user.email,
-      email_verified: user.email_verified,
-      locale: user.locale,
-      sub: user.sub,
-    });
+    // Phase 1: call a first-party API (Auth0 /userinfo) on the user's behalf
+    const url = `https://${process.env.AUTH0_DOMAIN}/userinfo`;
+    try {
+      const started = Date.now();
+      logger.debug(`get_user_profile: GET ${url} with user's access token`);
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      logger.debug(`get_user_profile: /userinfo -> ${response.status} (${Date.now() - started}ms)`);
+      if (response.status === 401) {
+        return createAuthRequiredPayload("Session expired, please log in again");
+      }
+      if (!response.ok) {
+        return `Failed to fetch user profile: HTTP ${response.status}`;
+      }
+      const data = await response.json();
+      logger.debug(`get_user_profile: /userinfo returned claims: ${Object.keys(data).join(", ")}`);
+      return JSON.stringify({
+        name: data.name,
+        email: data.email,
+        email_verified: data.email_verified,
+        picture: data.picture,
+        sub: data.sub,
+      });
+    } catch (err) {
+      logger.error(`get_user_profile: /userinfo call failed: ${err.message}`);
+      return `Failed to fetch user profile: ${err.message}`;
+    }
   },
   {
     name: "get_user_profile",

@@ -22,9 +22,9 @@ node-ai-assistant/
 │   └── js/
 │       ├── auth.js     # Auth state & UI logic
 │       └── chat.js     # Chat messaging logic
+├── docs/               # Architecture, sequence diagrams & guides
 ├── package.json
-├── .env                # Environment variables (Auth0, Gemini API key)
-└── ARCHITECTURE.md     # System design overview
+└── .env                # Environment variables (Auth0, Gemini API key)
 ```
 
 ## Making Changes

@@ -5,6 +5,9 @@ const getThreadId = () => {
   if (!threadId) {
     threadId = crypto.randomUUID();
     localStorage.setItem("threadId", threadId);
+    log("chat", "No saved thread, started new threadId:", threadId);
+  } else {
+    log("chat", "Reusing saved threadId (server keeps this conversation's history):", threadId);
   }
   return threadId;
 };
@@ -22,6 +25,7 @@ function addMessage(role, text) {
 }
 
 function greet() {
+  log("chat", "Greeting as", AUTH.authenticated ? "logged-in user" : "guest");
   const name = AUTH.user?.name || AUTH.user?.email || "there";
   const greeting = AUTH.authenticated
     ? `Hello ${name}, I'm your personal assistant. How can I help you today?`
@@ -35,13 +39,12 @@ function showLoginButton(targetMsg) {
   btnWrapper.className = "auth-action-wrapper";
   btnWrapper.style.marginTop = "10px";
 
-  const loginLink = document.createElement("button");
+  const loginLink = document.createElement("a");
   loginLink.className = "btn small login-action-btn";
+  loginLink.href = "/auth/login";
   loginLink.textContent = "🔐 Log in";
-  loginLink.onclick = (e) => {
-    e.preventDefault();
-    login();
-  };
+  loginLink.addEventListener("click", () => log("auth", "Log in clicked (from chat) -> /auth/login"));
+  log("chat", "Showing Log in button (server sent requireAuth)");
 
   btnWrapper.appendChild(loginLink);
   targetMsg.appendChild(btnWrapper);
@@ -58,21 +61,25 @@ async function sendMessage() {
   const botMsg = addMessage("bot", "…");
   let received = false;
 
+  const started = performance.now();
+  const since = () => `+${Math.round(performance.now() - started)}ms`;
+  // Everything about this turn is printed as one collapsed console group when it finishes
+  const turn = [];
+  let summary = "failed";
   try {
-    // NEW (Phase 1): Get access token if authenticated
-    const accessToken = AUTH.authenticated ? await getAccessToken() : null;
-
+    // Session cookie identifies the user; the server attaches the access token
+    const body = JSON.stringify({ message: text, threadId: CHAT.threadId });
+    turn.push([`Request body (loggedIn: ${AUTH.authenticated})`, JSON.parse(body)]);
+    log("chat", `Sending: "${text}"`);
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        message: text,
-        threadId: CHAT.threadId,
-        accessToken,
-      }),
+      body,
     });
 
+    turn.push([`Response ${response.status} at ${since()}, headers`, Object.fromEntries(response.headers)]);
     if (response.status === 401) {
+      summary = "401 (login required)";
       botMsg.textContent = "⚠️ This feature requires login. Please log in to continue.";
       showLoginButton(botMsg);
       return;
@@ -92,7 +99,9 @@ async function sendMessage() {
       const { value, done } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      const chunk = decoder.decode(value, { stream: true });
+      buffer += chunk;
+      turn.push([`Stream chunk ${value.length} B at ${since()} (raw)`, chunk]);
       const lines = buffer.split("\n\n");
       buffer = lines.pop();
 
@@ -105,6 +114,7 @@ async function sendMessage() {
         } catch {
           continue;
         }
+        turn.push([`Server event at ${since()}`, event]);
 
         // Definitive signal from server indicating authentication is required
         if (event.requireAuth) {
@@ -137,9 +147,13 @@ async function sendMessage() {
       showLoginButton(botMsg);
       CHAT.log.scrollTop = CHAT.log.scrollHeight;
     }
+    summary = `${response.status} in ${Math.round(performance.now() - started)}ms${authRequired ? " (login required)" : ""}`;
   } catch (error) {
+    console.error("[chat] Request failed:", error);
+    turn.push(["Error", error]);
     botMsg.textContent = "⚠️ " + error.message;
   } finally {
+    logGroup("chat", `POST /api/chat "${text.slice(0, 40)}" → ${summary}`, turn);
     CHAT.sendBtn.disabled = false;
     CHAT.input.focus();
   }
@@ -170,20 +184,20 @@ function initChat() {
   CHAT.newChatBtn.addEventListener("click", () => {
     CHAT.threadId = crypto.randomUUID();
     localStorage.setItem("threadId", CHAT.threadId);
+    log("chat", "New chat, threadId:", CHAT.threadId);
     CHAT.log.innerHTML = "";
     greet();
     CHAT.input.focus();
   });
 
-  // Greet on chat screen show
-  greet();
+  log("chat", "Chat ready, threadId:", CHAT.threadId);
+
+  // Greet once auth state is known
+  authReady.then(greet);
 }
 
-// Initialize chat UI after DOM and auth are ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initChat);
 } else {
-  // DOM already loaded (chat.js loaded after DOMContentLoaded event)
-  // Wait a tick to ensure auth.js has finished
-  setTimeout(initChat, 0);
+  initChat();
 }

@@ -1,13 +1,23 @@
 # Documentation
 
-This folder contains PlantUML diagrams documenting the Express AI Assistant architecture and flows.
+This folder contains architecture documentation, developer guides, implementation notes, and PlantUML diagrams for the Express AI Assistant.
+
+## Guides & Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Detailed system design and flow walkthroughs
+- **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** — Guide for developers, directory structure, adding tools
+- **[LOGGING.md](LOGGING.md)** — Unified Winston + mitmproxy logging and observability guide
+- **[PHASE1_IMPLEMENTATION.md](PHASE1_IMPLEMENTATION.md)** — First-party API call and Auth0 implementation notes
 
 ## Architecture Diagrams
 
-**[ARCHITECTURE.puml](../ARCHITECTURE.puml)** (root)
+**[ARCHITECTURE.puml](ARCHITECTURE.puml)**
 - System architecture overview
 - Component layers: Client, Server, AI, Auth
 - Data flow and external service integrations
+
+**[SEQUENCE.puml](SEQUENCE.puml)**
+- Comprehensive sequence flows in a single diagram
 
 ## Sequence Diagrams
 
@@ -193,9 +203,10 @@ Passed to agent at each invocation:
 
 ## References
 
-- [ARCHITECTURE.puml](../ARCHITECTURE.puml) — System overview
+- [ARCHITECTURE.puml](ARCHITECTURE.puml) — System overview
+- [SEQUENCE.puml](SEQUENCE.puml) — Sequence overview
 - [server.js](../src/server.js) — Express routing & SSE
 - [agent.js](../src/agent.js) — LangGraph orchestration
 - [tools.js](../src/tools.js) — Tool implementations
-- [auth.js](../js/auth.js) — Frontend auth state
-- [chat.js](../js/chat.js) — Chat UI & SSE listener
+- [auth.js](../public/js/auth.js) — Frontend auth state
+- [chat.js](../public/js/chat.js) — Chat UI & SSE listener
