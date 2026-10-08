@@ -1,6 +1,7 @@
 const { tool } = require("@langchain/core/tools");
 const { z } = require("zod");
 const { logger } = require("./logger");
+const { AUTH0_DOMAIN } = require("./auth0");
 
 const AUTH_REQUIRED_CODE = "AUTH_REQUIRED";
 const AUTH_REQUIRED_MARKER = "[AUTH_REQUIRED]";
@@ -122,10 +123,7 @@ const getUserProfile = tool(
     }
 
     // Phase 1: call a first-party API (Auth0 /userinfo) on the user's behalf
-    const auth0Domain = (process.env.AUTH0_DOMAIN || process.env.ISSUER_BASE_URL || "")
-      .replace(/^https?:\/\//, "")
-      .replace(/\/$/, "");
-    const url = `https://${auth0Domain}/userinfo`;
+    const url = `https://${AUTH0_DOMAIN}/userinfo`;
     try {
       const started = Date.now();
       logger.debug(`get_user_profile: GET ${url} with user's access token`);

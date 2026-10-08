@@ -6,45 +6,38 @@ skinparam roundcorner 6
 skinparam defaultFontName Arial
 skinparam lifelineStrategy solid
 
-title Sequence: User Logout & Session Revocation
+title Sequence: User Logout
 
 actor User
 participant "Browser\n(auth.js)" as UI
 participant "Express Server\n(server.js)" as Server
-participant "Session Store" as SessionStore
+participant "Auth0" as Auth0
 
-User -> UI : Clicks [Log out] button
+User -> UI : Clicks [Log out]
+UI -> UI : Remove threadId, chat history\nand pendingMessage from localStorage
 UI -> Server : GET /auth/logout
 note over Server
   express-openid-connect
-  middleware handles logout
+  (auth0Logout: true)
 end note
 
-Server -> SessionStore : Invalidate session\n(delete from store)
-note over SessionStore #c8f0c8
-  ✓ Session deleted
-end note
-
-Server -> Server : Clear HTTP-only cookie\nSet-Cookie: auth0=; Max-Age=0
+Server -> UI : Clear session cookie\n302 → Auth0 /v2/logout?returnTo=APP_BASE_URL
 note over Server #c8f0c8
-  ✓ Cookie expired
-  Browser won't send it in future requests
+  Session (and its tokens) lived only
+  in the encrypted cookie: nothing
+  server-side to delete
 end note
 
-Server -> UI : 302 Redirect: Location: /
-note over UI
-  Frontend clears local auth state
-end note
+UI -> Auth0 : GET /v2/logout
+Auth0 -> Auth0 : End Auth0 SSO session
+Auth0 -> UI : 302 → APP_BASE_URL
 
-UI -> UI : Clear cached user data\nReset UI to anonymous state\nHide profile, show login button
-UI -> User : "Logged out successfully"
+UI -> Server : GET / , GET /api/auth/status
+Server --> UI : { authenticated: false }
+UI -> User : Header shows "Guest" + [Log in]\nNew thread, fresh greeting
 
-User -> UI : Refresh page or try "Who am I?"
-UI -> Server : GET /api/chat\n(no session cookie)
-note over Server
-  config: { authenticated: false, user: null }
-end note
-
-Server --> UI : Protected tool request\ntriggers auth signal again
+User -> UI : "Who am I?"
+UI -> Server : POST /api/chat (no session cookie)
+Server --> UI : Auth signal again (see diagram 02)
 
 @enduml

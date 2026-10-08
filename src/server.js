@@ -6,11 +6,11 @@ const { auth } = require("express-openid-connect");
 const { agent } = require("./agent");
 const { logger } = require("./logger");
 const { isAuthRequiredSignal } = require("./tools");
+const { AUTH0_DOMAIN } = require("./auth0");
 
 const {
   APP_BASE_URL = "http://localhost:3000",
   AUTH0_SECRET,
-  AUTH0_DOMAIN,
   AUTH0_CLIENT_ID,
   AUTH0_CLIENT_SECRET,
   AUTH0_API_AUDIENCE,
@@ -18,14 +18,8 @@ const {
   PORT = 3000,
 } = process.env;
 
-const AUTH0_DOMAIN_CLEAN =
-  (AUTH0_DOMAIN || process.env.ISSUER_BASE_URL || "")
-    .replace(/^https?:\/\//, "")
-    .replace(/\/$/, "");
-
 const ISSUER_BASE_URL_CLEAN =
-  process.env.ISSUER_BASE_URL ||
-  (AUTH0_DOMAIN_CLEAN ? `https://${AUTH0_DOMAIN_CLEAN}` : undefined);
+  process.env.ISSUER_BASE_URL || (AUTH0_DOMAIN ? `https://${AUTH0_DOMAIN}` : undefined);
 
 // Claims of a signed JWT (ID token, or an access token issued for an API audience)
 const decodeJwt = (token) => {

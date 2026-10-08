@@ -122,16 +122,6 @@ async function sendMessageText(text) {
     });
 
     turn.push([`Response ${response.status} at ${since()}, headers`, Object.fromEntries(response.headers)]);
-    if (response.status === 401) {
-      summary = "401 (login required)";
-      botMsg.textContent = "⚠️ This feature requires login. Please log in to continue.";
-      authRequired = true;
-      localStorage.setItem("pendingMessage", text);
-      showLoginButton(botMsg);
-      saveMessage(CHAT.threadId, "bot", botMsg.textContent, true);
-      return;
-    }
-
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || "Something went wrong");
@@ -177,8 +167,6 @@ async function sendMessageText(text) {
             received = true;
           }
           botMsg.textContent += event.token;
-        } else if (event.tool) {
-          botMsg.textContent = `🔧 using ${event.tool}…`;
         } else if (event.error && !event.requireAuth) {
           throw new Error(event.error);
         }
@@ -229,7 +217,6 @@ function initChat() {
     input: document.getElementById("chat-input"),
     sendBtn: document.getElementById("send-btn"),
     newChatBtn: document.getElementById("new-chat"),
-    messagesReceived: false,
     lastUserPrompt: null,
   };
 

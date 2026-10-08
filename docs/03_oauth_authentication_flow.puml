@@ -20,7 +20,7 @@ note over Server
   middleware initiates flow
 end note
 
-Server -> Auth0 : Redirect to /authorize?\nclient_id=...\n&redirect_uri=http://localhost/auth/callback\n&scope=openid profile email\n&response_type=code\n&state=...
+Server -> Auth0 : Redirect to /authorize?\nclient_id=...\n&redirect_uri=http://localhost/auth/callback\n&scope=openid profile email offline_access\n&response_type=code\n&state=...
 note over Auth0 #e3f2fd
   OIDC Authorization Code Flow
 end note
@@ -38,7 +38,7 @@ note over Server #e3f2fd
   OIDC middleware intercepts
 end note
 
-Server -> Server : 1. Validate state parameter\n2. Exchange code for tokens\n3. Validate id_token (JWT)\n4. Extract claims:\n   - name: "Alice"\n   - email: "alice@example.com"\n   - sub: "auth0|12345"\n5. Create session data\n6. Store in session store\n7. Issue HTTP-only cookie
+Server -> Server : 1. Validate state parameter\n2. Exchange code for tokens\n3. Validate id_token (JWT)\n4. Extract claims:\n   - name: "Alice"\n   - email: "alice@example.com"\n   - sub: "auth0|12345"\n5. Keep id/access/refresh tokens in session\n6. Issue encrypted HTTP-only session cookie
 note over Server #c8f0c8
   ✓ Secure session established
   User data extracted from JWT
@@ -55,6 +55,6 @@ UI -> Server : GET /api/me
 Server --> UI : {\n  name: "Alice",\n  email: "alice@example.com",\n  sub: "auth0|12345"\n}
 
 UI -> UI : Update header:\nDisplay "Alice"\nShow [Log out] button
-UI -> User : "Welcome back, Alice!"
+UI -> User : Restore chat history;\nre-send pendingMessage if one was saved
 
 @enduml

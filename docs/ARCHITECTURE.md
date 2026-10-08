@@ -1,282 +1,111 @@
 # Architecture Overview
 
-This project is an AI assistant with a clean separation between frontend and backend, supporting both anonymous and authenticated users.
+An AI assistant with a clean frontend/backend split. Anyone can chat anonymously; login is requested only when a tool needs the user's identity.
 
-```plantuml
-@startuml Express_AI_Assistant_Architecture
-!theme plain
-skinparam componentStyle uml2
-skinparam packageStyle rectangle
-skinparam shadowing false
-skinparam roundcorner 8
-skinparam defaultFontName Arial
+- Component diagram: [ARCHITECTURE.puml](ARCHITECTURE.puml)
+- Step-by-step flows: the numbered sequence diagrams listed in [README.md](README.md)
 
-title Express AI Assistant - System Architecture
-
-package "Frontend (Browser Client)" {
-    [index.html] as HTML
-    [js/auth.js] as AuthUI
-    [js/chat.js] as ChatUI
-    [style.css] as Style
-    
-    HTML ..> AuthUI : loads
-    HTML ..> ChatUI : loads
-    HTML ..> Style : loads
-}
-
-package "Backend (Express Server)" {
-    [src/server.js\nExpress App] as Server
-    [express-openid-connect\nOIDC Middleware] as OIDC
-    [src/logger.js\nWinston Logger] as Logger
-    
-    Server --> OIDC : session & auth
-    Server --> Logger : logs events
-}
-
-package "AI Agent Layer" {
-    [src/agent.js\nLangGraph Agent] as Agent
-    [MemorySaver\nCheckpointer] as Memory
-    [ChatGoogleGenerativeAI\nModel Client] as LLMClient
-    
-    Agent --> Memory : conversation state
-    Agent --> LLMClient : prompt & invoke
-}
-
-package "AI Tools (src/tools.js)" {
-    [get_current_time\n(Public Tool)] as ToolTime
-    [get_user_profile\n(Auth Required)] as ToolProfile
-    [request_login\n(Explicit Login Intent)] as ToolLogin
-    [isAuthRequiredSignal()\n(Definitive Signal Validator)] as SignalDetector
-}
-
-cloud "External Services" {
-    [Auth0\nUniversal Login] as Auth0
-    [Google Gemini API] as GeminiAPI
-}
-
-' Frontend <-> Backend
-ChatUI -right-> Server : POST /api/chat (SSE Stream)
-AuthUI --> Server : GET /api/auth/status\nGET /api/me
-HTML --> Server : GET /auth/login\nGET /auth/logout
-
-' Backend Auth
-OIDC <--> Auth0 : OAuth 2.0 / OIDC Authorization Code Flow
-
-' Backend <-> Agent
-Server --> Agent : agent.invoke(messages, config)
-Agent --> ToolTime : calls public tool
-Agent --> ToolProfile : calls profile tool
-Agent --> ToolLogin : calls login request
-Server --> SignalDetector : inspects ToolMessage trace (ignores LLM text)
-LLMClient <--> GeminiAPI : generateContent (Function Calling)
-
-@enduml
-```
-
-## Backend Structure (`src/`)
+## Backend (`src/`)
 
 ### `server.js` — Express server & routing
-- **Entry point**: Runs on `http://localhost:3000`
-- **Auth**: Auth0 integration via `express-openid-connect` (optional, not required for chat)
-- **Key endpoints**:
-  - `GET /` — Serves index.html (shows login or chat based on auth status)
-  - `GET /api/auth/status` — Returns `{authenticated: boolean}`
-  - `GET /api/me` — Returns user profile (requires login)
-  - `POST /api/chat` — Streams chat responses as Server-Sent Events
-    - Works for **both anonymous and authenticated users**
-    - Passes `authenticated` flag to agent so tools can check auth status
+- Auth0 via `express-openid-connect` with `authRequired: false` (chat never requires login)
+- Session is an encrypted, HTTP-only cookie; tokens stay on the server and are never sent to the browser
+- Endpoints:
 
-### `agent.js` — LangGraph ReAct agent
-- Uses `createReactAgent` from LangGraph (ReAct = Reasoning + Acting pattern)
-- Model: Google Gemini
-- Checkpointer: In-memory (use Postgres/Redis for production)
-- System prompt: Friendly, concise personal assistant
+| Route | Purpose |
+|-------|---------|
+| `GET /` | Serves `index.html` |
+| `GET /healthz` | Health check (Docker) |
+| `GET /auth/login`, `/auth/signup`, `/auth/logout`, `/auth/callback` | Auth0 Universal Login |
+| `GET /api/auth/status` | `{ authenticated: boolean }` |
+| `GET /api/me` | `{ name, email, picture }`, 401 when anonymous |
+| `POST /api/chat` | `{ message, threadId }` → Server-Sent Events, works anonymous or logged in |
+| `POST /api/internal/proxy-log` | Receives mitmproxy events (requires `x-internal-proxy-log: true`), see [LOGGING.md](LOGGING.md) |
 
-### `tools.js` — AI tools
-- **`get_current_time(timezone?)`** — Public tool, works for all users
-- **`get_user_profile()`** — Auth-required, throws error if `authenticated === false`
+### `agent.js` — LangGraph agent
+- `createAgent` (from `langchain`) with Google Gemini (`LLM_MODEL`)
+- `MemorySaver` checkpointer keyed by `thread_id`: in-memory, lost on restart
 
-## Frontend Structure (`public/`)
+### `tools.js` — AI tools and the auth signal
+| Tool | Access | Behaviour |
+|------|--------|-----------|
+| `get_current_time(timezone?)` | Public | Current time in an IANA timezone |
+| `get_user_profile()` | Login required | Calls Auth0 `/userinfo` with the user's access token |
+| `request_login()` | Public | Returns the auth-required signal when the user asks to log in |
 
-### `index.html` — Single page, two screens
-- **Login screen**: Shows for non-authenticated users (or if not in anonymous mode)
-  - "Log in" button
-  - "Sign up" button
-  - "Start chatting anonymously" link
-- **Chat screen**: Shows for all users (authenticated or anonymous)
-  - Header with user name (shows "Guest" for anonymous)
-  - Chat log (messages)
-  - Input form
-  - New chat button
-  - Log out button (only for authenticated users)
+Tools that need login **return** `createAuthRequiredPayload(...)` (they do not throw). `isAuthRequiredSignal(messages)` scans only the ToolMessages of the current turn for that payload.
 
-### `js/auth.js` — Authentication UI logic
-- Checks `/api/auth/status` on page load
-- Fetches `/api/me` if authenticated
-- Stores auth state in `AUTH` object
-- Handles anonymous mode toggle
-- Renders login or chat screen based on auth state
+### `observability.js` / `logger.js`
+Winston console logger plus LangChain callbacks that log LLM and tool calls with timings, masking tokens. See [LOGGING.md](LOGGING.md).
 
-### `js/chat.js` — Chat messaging logic
-- Manages thread ID (UUID, persisted per browser session)
-- Sends messages to `/api/chat` endpoint
-- Streams Server-Sent Events (SSE) responses
-- Displays tool usage (e.g., "🔧 using get_current_time…")
-- Handles auth errors gracefully:
-  - If tool requires auth, shows login prompt to user
-  - User can click "Log in" to proceed
+## Frontend (`public/`)
 
-### `style.css` — Styling
-- Dark/light mode support (system preference)
-- Mobile-responsive layout
-- Clean, minimal design
+- **`index.html`** — a single chat screen. The header shows the user name ("Guest" when anonymous), *New chat*, and *Log in* or *Log out*.
+- **`js/auth.js`** — on load calls `/api/auth/status`, then `/api/me` if logged in; exposes `AUTH` and the `authReady` promise. Logging out clears the local thread and history.
+- **`js/chat.js`** — keeps `threadId` and the chat history in `localStorage`, posts to `/api/chat`, and reads the SSE stream. When the stream contains `requireAuth: true` it appends a *🔐 Log in* button and saves the prompt as `pendingMessage`. After login the pending prompt is re-sent automatically.
+- **`style.css`** — light/dark (system preference), responsive.
 
-## Data Flow
+## Chat request flow
 
-```plantuml
-@startuml Definitive_Auth_Signal_Sequence
-!theme plain
-autonumber
-skinparam shadowing false
-skinparam roundcorner 6
-skinparam defaultFontName Arial
-
-title Express AI Assistant - Definitive Signal & Authentication Flow
-
-actor User
-participant "Chat UI\n(chat.js)" as UI
-participant "Express Server\n(server.js)" as Server
-participant "LangGraph Agent\n(agent.js)" as Agent
-participant "Tools\n(tools.js)" as Tools
-participant "Gemini LLM" as LLM
-participant "Auth0" as Auth0
-
-== 1. Public Tool Flow (Anonymous) ==
-User -> UI : "What time is it in Tokyo?"
-UI -> Server : POST /api/chat { message, threadId }
-Server -> Agent : agent.invoke() [authenticated: false]
-Agent -> LLM : Prompt user message
-LLM --> Agent : FunctionCall: get_current_time({ timezone: "Asia/Tokyo" })
-Agent -> Tools : execute get_current_time
-Tools --> Agent : ToolMessage: "4:57 AM JST"
-Agent -> LLM : Return tool output
-LLM --> Agent : AIMessage: "It's 4:57 AM in Tokyo."
-Agent --> Server : result { messages }
-Server -> Server : isAuthRequiredSignal(messages) -> false
-Server -> UI : SSE { token: "It's 4:57 AM in Tokyo." }
-Server -> UI : SSE { done: true }
-UI -> User : Displays answer (No login button)
-
-== 2. Auth-Protected Tool Flow (Definitive Signal Base) ==
-User -> UI : "Who am I?"
-UI -> Server : POST /api/chat { message, threadId }
-Server -> Agent : agent.invoke() [authenticated: false]
-Agent -> LLM : Prompt user message
-LLM --> Agent : FunctionCall: get_user_profile()
-Agent -> Tools : execute get_user_profile (config.authenticated = false)
-note over Tools #ffebee
-  Definitive Signal:
-  returns { requiresAuth: true, error: "AUTH_REQUIRED" }
-end note
-Tools --> Agent : ToolMessage (content contains requiresAuth: true)
-Agent -> LLM : Provide tool result
-LLM --> Agent : AIMessage: "Please log in so I can look up your profile."
-Agent --> Server : result { messages: [..., ToolMessage, AIMessage] }
-
-Server -> Server : isAuthRequiredSignal(messages)\n-> Inspects ONLY ToolMessage (never parses LLM text) -> TRUE
-Server -> UI : SSE { token: "Please log in so I can look up your profile." }
-Server -> UI : SSE { requireAuth: true, error: "You need to log in..." }
-Server -> UI : SSE { done: true }
-
-UI -> UI : receives event.requireAuth == true\n(Zero keyword string matching on bot text)
-UI -> User : Displays bot explanation + Appends [🔐 Log in] button
-
-== 3. Authentication Flow ==
-User -> UI : Clicks [🔐 Log in] button
-UI -> Server : GET /auth/login
-Server -> Auth0 : Redirects to Universal Login
-User -> Auth0 : Authenticates with credentials
-Auth0 -> Server : Redirects to /auth/callback with code
-Server -> Server : Issues secure HTTP-only session cookie
-Server -> UI : Redirects back to "/"
-UI -> Server : GET /api/auth/status
-Server --> UI : { authenticated: true }
-UI -> Server : GET /api/me
-Server --> UI : { name: "Alice", email: "alice@example.com" }
-UI -> User : Updates header: "Alice" + displays [Log out]
-
-== 4. Authenticated User Flow ==
-User -> UI : "Who am I?"
-UI -> Server : POST /api/chat [with session cookie]
-Server -> Agent : agent.invoke() [authenticated: true, user: Alice]
-Agent -> Tools : get_user_profile() (authenticated = true)
-Tools --> Agent : ToolMessage: { name: "Alice", email: "alice@example.com" }
-Agent -> LLM : Return Alice profile
-LLM --> Agent : AIMessage: "You are Alice (alice@example.com)."
-Server -> Server : isAuthRequiredSignal(messages) -> FALSE
-Server -> UI : SSE { token: "You are Alice..." }
-Server -> UI : SSE { done: true }
-UI -> User : Displays profile (No login button)
-
-@enduml
+```
+Browser ──cookie──▶ Express (express-openid-connect)
+                      │  req.oidc.accessToken  (refreshed if expired)
+                      ▼
+                    agent.invoke  configurable: { thread_id, user, authenticated, __accessToken }
+                      │
+                      ▼
+                    get_user_profile ──Authorization: Bearer <token>──▶ https://AUTH0_DOMAIN/userinfo
 ```
 
-### Anonymous Chat Flow
-```
-User → "What time is it?" 
-  → POST /api/chat (no auth header)
-  → Agent runs (authenticated = false)
-  → Agent calls get_current_time (public tool)
-  → Response streamed to UI
-  → User sees answer
-```
+1. The server reads the session. Anonymous users get `user = { sub: "anonymous", name: "Guest" }`.
+2. If the user is logged in, the server gets the access token and refreshes it when expired. Login requests `offline_access`, so a refresh token is available.
+3. The agent runs to completion. The `__` prefix on `__accessToken` keeps the token out of LangChain tracing metadata.
+4. The server sends the final assistant text as one `{ token }` event. If `isAuthRequiredSignal` matched, it then sends `{ requireAuth: true, error }`, followed by `{ done: true }`.
 
-### Authenticated Chat Flow
-```
-User → Login (Auth0)
-  → GET / (redirects to chat.html)
-  → GET /api/auth/status (returns authenticated: true)
-  → GET /api/me (shows user name)
-  → "Who am I?"
-  → POST /api/chat (with session)
-  → Agent runs (authenticated = true)
-  → Agent calls get_user_profile
-  → Response streamed to UI
-  → User sees their profile
-```
+The `threadId` is kept across login, so the conversation continues after the user authenticates.
 
-### Auth Error Flow (Definitive Signal Base)
-```
-Anonymous user → "Who am I?"
-  → POST /api/chat (no auth)
-  → Agent runs (authenticated = false)
-  → Agent invokes get_user_profile tool
-  → Tool returns structured auth-required payload: { requiresAuth: true, error: "AUTH_REQUIRED" }
-  → Server checks tool trace with isAuthRequiredSignal (never parses LLM text)
-  → Server streams assistant explanation + SSE event: { requireAuth: true }
-  → UI displays assistant message and appends "🔐 Log in" button based on signal
-  → User clicks button → redirects to /auth/login
+### SSE events
+
+| Event | Meaning |
+|-------|---------|
+| `{ token: string }` | Assistant reply text |
+| `{ requireAuth: true, error }` | A tool needs login: show the *Log in* button |
+| `{ error }` | Agent failure |
+| `{ done: true }` | End of turn |
+
+## Auth signal: why not parse LLM text
+
+The login button is driven only by a structured payload that a tool returns:
+
+```json
+{ "requiresAuth": true, "error": "AUTH_REQUIRED", "code": "REQUIRES_AUTH", "message": "[AUTH_REQUIRED] ..." }
 ```
 
-## Key Design Decisions
+The server inspects ToolMessages and ignores user and assistant text. A reply that only *talks about* logging in (for example "How do I log in to Netflix?") does not trigger the button, and prompt injection cannot fake the signal. Only the current turn is scanned, so a login prompt from an earlier turn does not repeat.
 
-1. **No React** — Vanilla JavaScript keeps the codebase simple and dependency-free
-2. **Anonymous-first** — Users can chat immediately without login
-3. **Gradual authentication** — Only ask for login when a feature needs it
-4. **Separation of concerns**:
-   - `auth.js` handles auth UI
-   - `chat.js` handles chat messaging
-   - `server.js` handles API routing
-   - `tools.js` handles AI tool definitions
-   - `agent.js` handles AI agent configuration
-5. **Server-Sent Events** — Streams token-by-token responses for real-time feel
-6. **Thread persistence** — Each browser session gets a UUID, conversations persist within that session
+## Auth0 setup
 
-## Deployment Checklist
+**Application:** Regular Web App
+- Allowed Callback URLs: `http://localhost:3000/auth/callback`
+- Allowed Logout URLs: `http://localhost:3000`
 
-- [ ] Replace `MemorySaver()` checkpointer with persistent store (Postgres, Redis, etc.)
-- [ ] Set `APP_BASE_URL` to production domain
-- [ ] Ensure Auth0 credentials are set in environment
-- [ ] Consider rate limiting on `/api/chat` endpoint
-- [ ] Add CORS if frontend and backend are on different domains
+**Audience (optional):** without `AUTH0_API_AUDIENCE`, Auth0 issues an access token that only works for its own `/userinfo`, which is all `get_user_profile` needs. To have the agent call **your own** API:
+1. Applications → APIs → Create API, with Identifier = `AUTH0_API_AUDIENCE`, RS256, and *Allow Offline Access* on. If the API does not exist, login fails with `Service not found: <audience>`.
+2. Set `AUTH0_API_AUDIENCE` in `.env`. The access token becomes a JWT for that API and still works for `/userinfo`.
+
+## Key design decisions
+
+1. **Vanilla JS frontend** — no framework or build step
+2. **Anonymous-first** — chat works immediately; login only when a tool needs it
+3. **Server-side tokens** — the browser holds only the session cookie
+4. **Definitive auth signal** — structured tool output, never keyword matching
+5. **Separation of concerns** — `auth.js` / `chat.js` on the client; `server.js` (HTTP), `agent.js` (model), `tools.js` (tools) on the server
+
+## Deployment checklist
+
+- [ ] Replace `MemorySaver` with a persistent checkpointer (Postgres, Redis, …)
+- [ ] Set `APP_BASE_URL` to the production URL and update the Auth0 callback/logout URLs
+- [ ] Use a strong `AUTH0_SECRET` (`openssl rand -hex 32`)
+- [ ] Rate-limit `/api/chat`
+- [ ] Protect or disable `/api/internal/proxy-log` (debug only)
 - [ ] Monitor LLM token usage and costs

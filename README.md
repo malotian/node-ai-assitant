@@ -52,14 +52,24 @@ npm run docker:down    # stop containers
 |-----------|---------|
 | `src/server.js` | Express + Auth0 (express-openid-connect) + API routes |
 | `src/agent.js` | LangGraph agent (createAgent) with LLM model |
-| `src/tools.js` | AI tools with auth checks |
-| `src/observability.js` | Console tracing & agent callbacks integrated with Winston |
-| `Dockerfile`, `docker-compose.yml` | App image and compose setup |
-| `docker-compose.debug.yml` | mitmproxy debug service with logger addon |
-| `public/index.html` | Single page (login + chat screens) |
-| `public/js/auth.js` | Authentication UI logic |
-| `public/js/chat.js` | Chat messaging logic |
+| `src/tools.js` | AI tools + definitive auth-required signal |
+| `src/observability.js` | Agent callbacks (LLM/tool timings) logged via Winston |
+| `src/logger.js` | Winston console logger |
+| `src/auth0.js` | Normalized Auth0 domain shared by server and tools |
+| `public/index.html` | Single chat page |
+| `public/js/auth.js` | Auth state (`/api/auth/status`, `/api/me`) |
+| `public/js/chat.js` | Chat, SSE reader, login button, local history |
 | `public/style.css` | Styling (dark/light mode, responsive) |
+| `test/` | `node:test` suites |
+| `Dockerfile`, `docker-compose.yml` | App image and compose setup |
+| `docker-compose.debug.yml`, `docker/mitmproxy/` | mitmproxy debug service with logger addon |
+
+## Tests
+
+```bash
+npm test          # unit tests
+npm run test:all  # + live API test (server must be running)
+```
 
 ## Key Features
 
@@ -72,8 +82,13 @@ npm run docker:down    # stop containers
 ## Next Steps
 
 - **Add tools:** Edit `src/tools.js`
-- **Switch LLM:** Update `src/agent.js` (supports OpenAI, Anthropic, etc.)
+- **Switch LLM:** Update `src/agent.js` (any LangChain chat model)
 - **Persistent storage:** Replace `MemorySaver` with Redis/Postgres
 - **Custom logic:** Extend agent with `StateGraph`
 
-See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for system design, [DEVELOPER_GUIDE.md](./docs/DEVELOPER_GUIDE.md) for development reference, and the [docs/](./docs/) directory for diagrams and guides.
+## Documentation
+
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — system design, endpoints, auth signal, Auth0 setup
+- [docs/DEVELOPER_GUIDE.md](./docs/DEVELOPER_GUIDE.md) — env vars, adding tools, testing
+- [docs/LOGGING.md](./docs/LOGGING.md) — logging and mitmproxy
+- [docs/README.md](./docs/README.md) — index of PlantUML sequence diagrams

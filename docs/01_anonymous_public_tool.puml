@@ -19,7 +19,8 @@ User -> UI : "What time is it in Tokyo?"
 UI -> Server : POST /api/chat\n{ message, threadId }
 note over Server #e3f2fd
   No session cookie
-  config: { authenticated: false, user: null }
+  config: { authenticated: false,
+            user: { sub: "anonymous", name: "Guest" } }
 end note
 
 Server -> Agent : invoke(messages, config)
@@ -45,19 +46,13 @@ Agent --> Server : result {\n  messages: [\n    UserMessage,\n    FunctionCall,\
 
 Server -> Server : isAuthRequiredSignal(messages)\n→ requiresAuth flag found? NO\n→ Return: FALSE
 note over Server #c8f0c8
-  Safe to stream response
   No login required
 end note
 
-loop Token streaming (SSE)
-  Server -> UI : SSE event: { token: "It's" }
-  Server -> UI : SSE event: { token: " 4:57" }
-  Server -> UI : SSE event: { token: " AM..." }
-end
-
+Server -> UI : SSE event: { token: "It's 4:57 AM in Tokyo right now." }
 Server -> UI : SSE event: { done: true }
 
-UI -> UI : Render tokens\nNo login button
+UI -> UI : Render reply\nNo login button
 UI -> User : "It's 4:57 AM in Tokyo right now."
 
 @enduml
