@@ -10,11 +10,12 @@
     "test": "node --test test/auth-signal.test.js test/app-routes.test.js test/chat-ui.test.js test/observability-and-proxy.test.js",
     "test:all": "node --test test/*.test.js",
     "debug": "node --inspect src/server.js",
-    "docker:up": "docker compose up -d --build",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
     "docker:down": "docker compose -f docker-compose.yml -f docker-compose.debug.yml down",
     "docker:logs": "docker compose logs -f app",
     "debug:proxy": "NODE_USE_ENV_PROXY=1 HTTPS_PROXY=http://127.0.0.1:8080 HTTP_PROXY=http://127.0.0.1:8080 NO_PROXY=localhost,127.0.0.1 NODE_EXTRA_CA_CERTS=docker/mitmproxy/mitmproxy-ca-cert.pem node src/server.js",
-    "docker:debug": "docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d --build"
+    "docker:debug": "docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d"
   },
   "engines": {
     "node": ">=20"

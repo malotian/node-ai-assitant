@@ -22,6 +22,7 @@ services:
       retries: 15
 
   app:
+    command: ["node", "--watch", "src/server.js"]
     environment:
       NODE_USE_ENV_PROXY: "1"
       HTTPS_PROXY: http://mitmproxy:8080
@@ -30,6 +31,8 @@ services:
       NODE_EXTRA_CA_CERTS: /certs/mitmproxy-ca-cert.pem
     volumes:
       - ./docker/mitmproxy:/certs:ro
+      - ./src:/app/src
+      - ./public:/app/public
     depends_on:
       mitmproxy:
         condition: service_healthy
