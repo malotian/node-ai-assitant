@@ -7,7 +7,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "stop": "fuser -k 3000/tcp 2>/dev/null || true; pkill -f '[n]ode.*src/server.js' 2>/dev/null || true",
-    "test": "node --test test/auth-signal.test.js test/chat-ui.test.js test/observability-and-proxy.test.js",
+    "test": "node --test test/auth-signal.test.js test/app-routes.test.js test/chat-ui.test.js test/observability-and-proxy.test.js",
     "test:all": "node --test test/*.test.js",
     "debug": "node --inspect src/server.js",
     "docker:up": "docker compose up -d --build",

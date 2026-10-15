@@ -10,7 +10,7 @@ title Sequence: OAuth 2.0 Authentication (Auth0 / OIDC)
 
 actor User
 participant "Browser\n(auth.js)" as UI
-participant "Express Server\n(server.js)" as Server
+participant "Express Server\n(app.js + routes/)" as Server
 participant "Auth0\nUniversal Login" as Auth0
 
 User -> UI : Clicks [🔐 Log in] button

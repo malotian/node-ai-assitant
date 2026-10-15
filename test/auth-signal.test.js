@@ -5,7 +5,7 @@ const {
   createAuthRequiredPayload,
   AUTH_REQUIRED_CODE,
   AUTH_REQUIRED_MARKER,
-} = require("../src/tools");
+} = require("../src/auth-signal");
 const { ToolMessage, AIMessage, HumanMessage } = require("@langchain/core/messages");
 
 describe("Definitive Authentication Signal Detection", () => {

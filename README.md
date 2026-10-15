@@ -54,12 +54,17 @@ Code is copied into the image at build time: after a change, run `docker:up` / `
 
 | Component | Purpose |
 |-----------|---------|
-| `src/server.js` | Express + Auth0 (express-openid-connect) + API routes |
-| `src/agent.js` | LangGraph agent (createAgent) with LLM model |
-| `src/tools.js` | AI tools + definitive auth-required signal |
+| `src/server.js` | Entry point: builds the agent and app, starts listening, graceful shutdown |
+| `src/app.js` | Express app: middleware, static files, mounts the routers |
+| `src/routes/` | `auth.js` (Auth0 login), `chat.js` (SSE chat), `api.js` (user info), `internal.js` (mitmproxy log) |
+| `src/session.js` | Session helpers: is logged in, access token, `requireUser` |
+| `src/config.js` | The only module that reads environment variables |
+| `src/agent.js` | LangGraph agent factory (createAgent) with LLM model |
+| `src/tools/` | AI tools, one file per tool, listed in `index.js` |
+| `src/auth-signal.js` | Definitive auth-required signal shared by tools and the chat route |
 | `src/observability.js` | Agent callbacks (LLM/tool timings) logged via Winston |
 | `src/logger.js` | Winston console logger |
-| `src/auth0.js` | Normalized Auth0 domain shared by server and tools |
+| `src/auth0.js` | Auth0 domain and the `/userinfo` call used by tools |
 | `public/index.html` | Single chat page |
 | `public/js/auth.js` | Auth state (`/api/auth/status`, `/api/me`) |
 | `public/js/chat.js` | Chat, SSE reader, login button, local history |
@@ -85,7 +90,7 @@ npm run test:all  # + live API test (server must be running)
 
 ## Next Steps
 
-- **Add tools:** Edit `src/tools.js`
+- **Add tools:** Add a file in `src/tools/` and list it in `src/tools/index.js`
 - **Switch LLM:** Update `src/agent.js` (any LangChain chat model)
 - **Persistent storage:** Replace `MemorySaver` with Redis/Postgres
 - **Custom logic:** Extend agent with `StateGraph`

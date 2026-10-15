@@ -10,7 +10,7 @@ title Sequence: Anonymous User - Public Tool (get_current_time)
 
 actor User
 participant "Browser\n(chat.js)" as UI
-participant "Express Server\n(server.js)" as Server
+participant "Express Server\n(app.js + routes/)" as Server
 participant "LangGraph Agent" as Agent
 participant "Tool Executor" as Tools
 participant "Gemini API" as LLM

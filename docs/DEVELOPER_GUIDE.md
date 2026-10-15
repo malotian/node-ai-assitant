@@ -14,10 +14,15 @@ npm run dev            # auto-restarts on file changes
 ```
 node-ai-assistant/
 ├── src/
-│   ├── server.js          # Express server, Auth0, API routes, SSE
-│   ├── agent.js           # LangGraph agent (Gemini + MemorySaver)
-│   ├── tools.js           # AI tools + auth-required signal helpers
-│   ├── auth0.js           # Normalized Auth0 domain (shared config)
+│   ├── server.js          # Entry point: builds agent + app, listens, shuts down
+│   ├── app.js             # Express app: middleware, static files, routers
+│   ├── routes/            # auth.js (Auth0), chat.js (SSE), api.js, internal.js
+│   ├── session.js         # Logged-in check, access token, requireUser
+│   ├── config.js          # The only place that reads environment variables
+│   ├── agent.js           # LangGraph agent factory (Gemini + MemorySaver)
+│   ├── tools/             # AI tools: one file per tool, listed in index.js
+│   ├── auth-signal.js     # Auth-required signal shared by tools and chat route
+│   ├── auth0.js           # Auth0 domain + /userinfo call
 │   ├── observability.js   # Agent callbacks → logs (tokens masked)
 │   └── logger.js          # Winston console logger
 ├── public/
@@ -50,7 +55,7 @@ node-ai-assistant/
 
 ## Adding a Tool
 
-1. Define it in `src/tools.js`:
+1. Create `src/tools/my-tool.js` (import `createAuthRequiredPayload` from `../auth-signal`):
 ```javascript
 const myTool = tool(
   async (input, config) => {
@@ -67,7 +72,7 @@ const myTool = tool(
   }
 );
 ```
-2. Add it to the exported `tools` array. The agent picks it up automatically.
+2. Export it from `src/tools/my-tool.js` and add it to the `tools` array in `src/tools/index.js`. The agent picks it up automatically.
 
 **Public tools** skip the auth check. **Login-required tools** must *return* `createAuthRequiredPayload(...)`. The server detects that payload in the tool output and sends `requireAuth: true`, and the UI shows the *Log in* button. Never rely on the LLM's wording to trigger login.
 
@@ -81,7 +86,7 @@ const myTool = tool(
 ## Testing
 
 ```bash
-npm test            # unit tests: auth signal, chat UI simulation, observability/proxy log
+npm test            # unit tests: auth signal, app routes (stub agent), chat UI simulation, observability/proxy log
 npm run test:all    # also test/api-auth-signal.test.js; needs the server running with a valid LLM key
 ```
 

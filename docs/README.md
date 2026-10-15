@@ -28,7 +28,7 @@
 ## Key concepts
 
 ### Agent config
-`server.js` passes this to `agent.invoke` on every chat request:
+The chat route (`src/routes/chat.js`) passes this to `agent.invoke` on every chat request:
 ```javascript
 configurable: {
   thread_id: string,            // "<user.sub>:<threadId from browser>", scoped per user

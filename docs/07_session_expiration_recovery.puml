@@ -10,7 +10,7 @@ title Sequence: Token Refresh & Session Expiration
 
 actor User
 participant "Browser\n(chat.js)" as UI
-participant "Express Server\n(server.js)" as Server
+participant "Express Server\n(app.js + routes/)" as Server
 participant "Auth0" as Auth0
 
 == Access token expires (session still valid): invisible to the user ==

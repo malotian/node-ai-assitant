@@ -2,6 +2,7 @@
 // Replaces external tracing services with local Winston-integrated logging.
 const { BaseCallbackHandler } = require("@langchain/core/callbacks/base");
 const { logger } = require("./logger");
+const { config } = require("./config");
 
 // Defense in depth: never log bearer tokens or JWTs/JWEs
 const TOKEN_PATTERN = /eyJ[\w-]+(?:\.[\w-]*){2,4}|Bearer\s+[\w.~+/=-]+/g;
@@ -30,7 +31,7 @@ class ConsoleAgentLogger extends BaseCallbackHandler {
 
   handleLLMStart(llm, _prompts, runId) {
     if (runId) this.timers.set(runId, Date.now());
-    const model = process.env.LLM_MODEL || "Gemini";
+    const model = config.llmModel || "Gemini";
     logger.info(`🤖 Agent invoking LLM [${model}]`);
   }
 

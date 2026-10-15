@@ -31,10 +31,10 @@ All logs across Express, the LangChain agent, and mitmproxy outbound HTTP traffi
 
 ## Layers of Logging
 
-1. **Express Server (`src/server.js`)**
-   - HTTP request status and duration (under `LOG_LEVEL=debug`)
-   - Chat request details (`user`, `authenticated`, prompt preview)
-   - Login and auth state transitions
+1. **Express Server (`src/app.js`, `src/routes/`)**
+   - HTTP request status and duration (under `LOG_LEVEL=debug`, logged by `src/app.js`)
+   - Chat request details (`user`, `authenticated`, prompt preview) in `src/routes/chat.js`
+   - Login and auth state transitions in `src/routes/auth.js`
 
 2. **Agent Observability (`src/observability.js`)**
    - Model invocations (`🤖 Agent invoking LLM [...]`)

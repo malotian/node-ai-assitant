@@ -17,7 +17,7 @@ package "CLIENT (Browser)" {
 }
 
 package "SERVER (src/)" {
-    [server.js\nExpress routes + SSE] as Server
+    [app.js + routes/\nExpress routes + SSE] as Server
     [express-openid-connect\nOIDC middleware\n(encrypted session cookie)] as OIDC
     [logger.js\nWinston] as Logger
     [observability.js\nAgent callbacks] as Obs
@@ -30,7 +30,7 @@ package "AI (src/)" {
     [get_current_time\n(public)] as ToolTime
     [get_user_profile\n(auth required)] as ToolProfile
     [request_login\n(login intent)] as ToolLogin
-    [isAuthRequiredSignal()\n(tools.js)] as SignalDetector
+    [isAuthRequiredSignal()\n(auth-signal.js)] as SignalDetector
 }
 
 cloud "EXTERNAL" {

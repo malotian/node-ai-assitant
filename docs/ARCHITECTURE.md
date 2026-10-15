@@ -7,7 +7,8 @@ An AI assistant with a clean frontend/backend split. Anyone can chat anonymously
 
 ## Backend (`src/`)
 
-### `server.js` — Express server & routing
+### `server.js`, `app.js`, `routes/` — Express server & routing
+`server.js` only builds the agent, creates the app (`app.js`), and listens. `app.js` mounts the routers in `src/routes/`:
 - Auth0 via `express-openid-connect` with `authRequired: false` (chat never requires login)
 - Session is an encrypted, HTTP-only cookie; tokens stay on the server and are never sent to the browser
 - Endpoints:
@@ -22,21 +23,28 @@ An AI assistant with a clean frontend/backend split. Anyone can chat anonymously
 | `POST /api/chat` | `{ message, threadId }` → Server-Sent Events, works anonymous or logged in |
 | `POST /api/internal/proxy-log` | Receives mitmproxy events (requires `x-internal-proxy-log: true`), see [LOGGING.md](LOGGING.md) |
 
+### `config.js` — environment
+The only module that reads `process.env` and loads `.env`. Other modules import `config` from here.
+
+### `session.js` — login helpers
+`isAuthenticated(req)`, `getAccessToken(req)` (refreshes an expired token) and `requireUser` middleware.
+
 ### `agent.js` — LangGraph agent
-- `createAgent` (from `langchain`) with Google Gemini (`LLM_MODEL`)
+- `createAssistantAgent()` (from `langchain`) with Google Gemini (`LLM_MODEL`), called once at startup by `server.js`
 - `MemorySaver` checkpointer keyed by `thread_id` (`<user.sub>:<threadId>`): in-memory, lost on restart
 
-### `tools.js` — AI tools and the auth signal
+### `tools/` — AI tools
+One file per tool, all listed in `tools/index.js`.
 | Tool | Access | Behaviour |
 |------|--------|-----------|
 | `get_current_time(timezone?)` | Public | Current time in an IANA timezone |
 | `get_user_profile()` | Login required | Calls Auth0 `/userinfo` with the user's access token |
 | `request_login()` | Public | Returns the auth-required signal when the user asks to log in |
 
-Tools that need login **return** `createAuthRequiredPayload(...)` (they do not throw). `isAuthRequiredSignal(messages)` scans only the ToolMessages of the current turn for that payload.
+Tools that need login **return** `createAuthRequiredPayload(...)` (they do not throw). `isAuthRequiredSignal(messages)` in `src/auth-signal.js` scans only the ToolMessages of the current turn for that payload. `src/auth0.js` makes the `/userinfo` call that `get_user_profile` uses.
 
 ### `observability.js` / `logger.js`
-Winston console logger plus LangChain callbacks that log LLM and tool calls with timings, masking tokens. See [LOGGING.md](LOGGING.md).
+Winston console logger (level from `LOG_LEVEL`) plus LangChain callbacks that log LLM and tool calls with timings, masking tokens. See [LOGGING.md](LOGGING.md).
 
 ## Frontend (`public/`)
 
@@ -99,7 +107,7 @@ The server inspects ToolMessages and ignores user and assistant text. A reply th
 2. **Anonymous-first** — chat works immediately; login only when a tool needs it
 3. **Server-side tokens** — the browser holds only the session cookie
 4. **Definitive auth signal** — structured tool output, never keyword matching
-5. **Separation of concerns** — `auth.js` / `chat.js` on the client; `server.js` (HTTP), `agent.js` (model), `tools.js` (tools) on the server
+5. **Separation of concerns** — `auth.js` / `chat.js` on the client; `routes/` (HTTP), `agent.js` (model), `tools/` (tools), `config.js` (environment) on the server
 
 ## Deployment checklist
 
